@@ -1,0 +1,20 @@
+foreach(module knn renderer solver density gaussian_splatting)
+    if(module STREQUAL "gaussian_splatting")
+        set(source ${module}_benchmark.cpp)
+    else()
+        set(source ${module}_benchmark.cu)
+        set_source_files_properties(${source} PROPERTIES LANGUAGE CXX)
+    endif()
+    add_executable(${module}_benchmark ${source})
+    target_link_libraries(${module}_benchmark PRIVATE gs-native)
+    target_include_directories(${module}_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/test)
+    if(MSVC)
+        target_compile_options(${module}_benchmark PRIVATE /utf-8)
+    endif()
+    if(WIN32)
+        add_custom_command(TARGET ${module}_benchmark POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${module}_benchmark> $<TARGET_FILE_DIR:${module}_benchmark>
+            COMMAND_EXPAND_LISTS)
+    endif()
+endforeach()
