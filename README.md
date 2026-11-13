@@ -4,6 +4,60 @@ A C++17/CUDA implementation of 3D Gaussian Splatting, with one camera image per 
 
 The implementation follows the pipeline of [3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting). Gaussian rotations are stored as axis-angle vectors internally and converted to quaternions when exporting PLY files. The C++ namespace is `gs_native`.
 
+## Performance and quality
+
+### gs-native vs. official 3DGS
+
+Measured optimization speed ratios of **2.10x to 5.24x** versus the official Python 3DGS implementation across 11 historical runs. Each pair used the same scene, actual image resolution, held-out camera split, and a 30,000-iteration budget. Quality differences are reported below rather than assumed to be zero.
+
+![garden: gs-native, official 3DGS, reference](docs/benchmark_assets/garden.jpg)
+
+Left to right: **gs-native | official 3DGS | reference**. The same held-out view and official renderer are used for both models; the preview is resized for display.
+
+| Scene | gs-native time | Official 3DGS time | Speed ratio | Delta PSNR (dB) | Delta SSIM |
+|---|---:|---:|---:|---:|---:|
+| truck | 356.907 s (5.95 min) | 788.970 s (13.15 min) | 2.21x | +0.0871 | -0.000054 |
+| train | 312.585 s (5.21 min) | 655.577 s (10.93 min) | 2.10x | -0.4607 | -0.002485 |
+| drjohnson | 539.596 s (8.99 min) | 1413.095 s (23.55 min) | 2.62x | -0.0061 | -0.000058 |
+| playroom | 374.733 s (6.25 min) | 1041.503 s (17.36 min) | 2.78x | +0.0836 | -0.000156 |
+| bicycle | 2593.510 s (43.23 min) | 9379.895 s (156.33 min) | 3.62x | -0.0042 | -0.003333 |
+| bonsai | 720.258 s (12.00 min) | 3564.527 s (59.41 min) | 4.95x | -0.0688 | +0.000162 |
+| counter | 943.650 s (15.73 min) | 3954.168 s (65.90 min) | 4.19x | +0.0118 | -0.000172 |
+| garden | 2486.610 s (41.44 min) | 10005.353 s (166.76 min) | 4.02x | +0.2425 | -0.003314 |
+| kitchen | 1035.550 s (17.26 min) | 4395.360 s (73.26 min) | 4.24x | -0.0929 | -0.000153 |
+| room | 1005.790 s (16.76 min) | 4177.453 s (69.62 min) | 4.15x | +0.0732 | -0.000309 |
+| stump | 1303.370 s (21.72 min) | 6833.404 s (113.89 min) | 5.24x | -0.0983 | -0.001814 |
+
+**Speed ratio = official time / gs-native time. Delta = gs-native minus official.** Timings include optimization and density control, and exclude loading, initialization, saving, and evaluation. PSNR and SSIM use full-resolution floating-point evaluation, not the quantized PNG outputs of the render demo.
+
+**Test platforms:** RTX 4090 (24 GB), Ubuntu 22.04.4 LTS, CUDA 12.4. All gs-native runs and the first six official runs used a Xeon Platinum 8352V instance; the five later official runs used a Xeon Platinum 8358P instance. Image residency/transfer paths also differ. These are single-run system measurements, not an isolated kernel benchmark or a guarantee of equal quality; train is 0.461 dB lower for gs-native.
+
+[Full 11-scene report: resolutions, camera counts, model sizes, absolute metrics, run provenance, and all matched-view previews](docs/benchmark.md).
+
+### gs-native vs. gsplat v1.5.3
+
+This is a separate paired comparison against [gsplat v1.5.3](https://github.com/nerfstudio-project/gsplat/tree/937e29912570c372bed6747a5c9bf85fed877bae), using the same 11 scenes, full image resolutions, held-out camera names, and 30,000 single-camera iterations. All runs completed and all final models passed the evaluation checks.
+
+| Scene | gs-native time | gsplat time | Speed ratio | Delta PSNR (dB) | Delta SSIM |
+|---|---:|---:|---:|---:|---:|
+| truck | 356.907 s (5.95 min) | 985.690 s (16.43 min) | 2.76x | +0.3497 | +0.005573 |
+| train | 312.585 s (5.21 min) | 587.017 s (9.78 min) | 1.88x | +1.0314 | +0.008800 |
+| drjohnson | 539.596 s (8.99 min) | 1234.617 s (20.58 min) | 2.29x | +1.1775 | +0.017167 |
+| playroom | 374.733 s (6.25 min) | 823.625 s (13.73 min) | 2.20x | +0.7598 | +0.006137 |
+| bicycle | 2593.510 s (43.23 min) | 2593.519 s (43.23 min) | 1.00x | +0.0076 | -0.004762 |
+| bonsai | 720.258 s (12.00 min) | 1032.526 s (17.21 min) | 1.43x | -0.1099 | -0.001411 |
+| counter | 943.650 s (15.73 min) | 1098.318 s (18.31 min) | 1.16x | -0.0559 | -0.002162 |
+| garden | 2486.610 s (41.44 min) | 3260.747 s (54.35 min) | 1.31x | -0.0286 | -0.005774 |
+| kitchen | 1035.550 s (17.26 min) | 1261.177 s (21.02 min) | 1.22x | +0.0170 | -0.001544 |
+| room | 1005.790 s (16.76 min) | 1110.150 s (18.50 min) | 1.10x | +0.1048 | -0.000824 |
+| stump | 1303.370 s (21.72 min) | 2132.978 s (35.55 min) | 1.64x | -0.1022 | -0.003554 |
+
+**Speed ratio = gsplat time / gs-native time. Delta = gs-native minus gsplat.** A ratio above 1 means a shorter recorded gs-native time. Bicycle is effectively tied: both totals round to 43.23 minutes. Loading, initialization, warmup, saving, and evaluation are outside the optimization timers; in-loop density control and opacity resets remain included.
+
+**Configuration and platform differences:** gsplat uses `DefaultStrategy` and ordinary Adam, with opacity learning rate **0.05**, versus **0.025** in gs-native. World-space normalization is disabled in the gsplat driver to retain the original COLMAP coordinates. The historical gs-native runs used Xeon Platinum 8352V, while these gsplat runs used Xeon Platinum 8358P; both platforms used RTX 4090, Ubuntu 22.04.4 LTS, and CUDA 12.4. Host target-image dtypes and Gaussian population trajectories differ. The ratios describe the tested systems and configurations; they do not isolate CUDA kernel performance or imply equal reconstruction quality.
+
+[Full gs-native vs. gsplat report: conditions, camera counts, absolute metrics, timings, and provenance](docs/benchmark.md#gs-native-vs-gsplat-v153-11-scene-benchmark).
+
 ## Features
 
 - COLMAP binary scene loading and initialization from sparse points with built-in CUDA three-nearest-neighbor search.

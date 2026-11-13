@@ -1,4 +1,8 @@
 /.vs/
 /.vscode/
 /third_party/opencv/
-/docs/
+/docs/*
+!/docs/benchmark.md
+!/docs/benchmark_assets/
+/docs/benchmark_assets/*
+!/docs/benchmark_assets/*.jpg
