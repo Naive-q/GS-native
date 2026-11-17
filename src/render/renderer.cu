@@ -270,6 +270,7 @@ __global__ void IdentifyTileOffsetsKernel(
     }
 }
 
+template <bool Sample>
 __global__ void RenderTilesKernel(
     const int* gaussian_ids,
     const int64_t* gaussian_offsets,
@@ -278,7 +279,8 @@ __global__ void RenderTilesKernel(
     const float3* colors,
     CameraParams camera,
     float* image,
-    float3 background) {
+    float3 background,
+    float* sampled_contributions) {
     __shared__ float2 shared_means[256];
     __shared__ float4 shared_conic_opacities[256];
     __shared__ float3 shared_colors[256];
@@ -288,6 +290,10 @@ __global__ void RenderTilesKernel(
     int y = tile / camera.tile_count_x_ * kTileSize + t / kTileSize;
     bool inside = x < camera.width_ && y < camera.height_;
     bool done = !inside;
+    int tile_x = tile % camera.tile_count_x_ * kTileSize;
+    int tile_y = tile / camera.tile_count_x_ * kTileSize;
+    bool sample_pixel = x == tile_x + min(kTileSize, camera.width_ - tile_x) / 2 &&
+        y == tile_y + min(kTileSize, camera.height_ - tile_y) / 2;
     int64_t begin = gaussian_offsets[tile];
     int64_t end = gaussian_offsets[tile + 1];
     float transmittance = 1.0f;
@@ -322,6 +328,9 @@ __global__ void RenderTilesKernel(
                 continue;
             }
             float weight = alpha * transmittance;
+            if (Sample && sample_pixel) {
+                sampled_contributions[base + j] = weight;
+            }
             color.x += shared_colors[j].x * weight;
             color.y += shared_colors[j].y * weight;
             color.z += shared_colors[j].z * weight;
@@ -340,6 +349,7 @@ __global__ void RenderTilesKernel(
 }
 
 Renderer::~Renderer() {
+    cudaFree(sampled_contributions_);
     cudaFree(means_);
     cudaFree(conic_opacities_);
     cudaFree(colors_);
@@ -368,7 +378,38 @@ bool Renderer::Render(
     if (!BuildTileLists(gaussians, camera)) {
         return false;
     }
-    return RenderTiles(camera, background, image);
+    return RenderTiles(camera, background, image, nullptr);
+}
+
+bool Renderer::Render(
+    const GaussianBuffers& gaussians,
+    const CameraParams& camera,
+    const float* background,
+    float* image,
+    const float*& sampled_contributions,
+    int sh_degree) {
+    sampled_contributions = nullptr;
+    if (!ProjectGaussians(gaussians, camera, sh_degree) || !BuildTileLists(gaussians, camera)) {
+        return false;
+    }
+    if (record_capacity_ > sampled_capacity_) {
+        float* replacement = nullptr;
+        if (cudaMalloc(&replacement, static_cast<size_t>(record_capacity_) * sizeof(float)) != cudaSuccess) {
+            return false;
+        }
+        cudaFree(sampled_contributions_);
+        sampled_contributions_ = replacement;
+        sampled_capacity_ = record_capacity_;
+    }
+    if (sampled_capacity_ > 0 && cudaMemsetAsync(sampled_contributions_, 0,
+            static_cast<size_t>(sampled_capacity_) * sizeof(float)) != cudaSuccess) {
+        return false;
+    }
+    if (!RenderTiles(camera, background, image, sampled_contributions_)) {
+        return false;
+    }
+    sampled_contributions = sampled_contributions_;
+    return true;
 }
 
 bool Renderer::ProjectGaussians(
@@ -572,20 +613,33 @@ bool Renderer::BuildTileLists(
 bool Renderer::RenderTiles(
     const CameraParams& camera,
     const float* background,
-    float* image) {
+    float* image,
+    float* sampled_contributions) {
     int64_t tile_count = static_cast<int64_t>(camera.tile_count_x_) * camera.tile_count_y_;
     if (!background || !image || !tile_lists_.gaussian_offsets_ || camera.width_ <= 0 || camera.height_ <= 0 ||
         camera.tile_count_x_ <= 0 || camera.tile_count_y_ <= 0 || tile_count > tile_capacity_) {
         return false;
     }
-    RenderTilesKernel<<<static_cast<unsigned int>(tile_count), 256>>>(tile_lists_.gaussian_ids_,
-        tile_lists_.gaussian_offsets_,
-        means_,
-        conic_opacities_,
-        colors_,
-        camera,
-        image,
-        make_float3(background[0], background[1], background[2]));
+    if (sampled_contributions) {
+        RenderTilesKernel<true><<<static_cast<unsigned int>(tile_count), 256>>>(tile_lists_.gaussian_ids_,
+            tile_lists_.gaussian_offsets_,
+            means_,
+            conic_opacities_,
+            colors_,
+            camera,
+            image,
+            make_float3(background[0], background[1], background[2]), sampled_contributions);
+    }
+    else {
+        RenderTilesKernel<false><<<static_cast<unsigned int>(tile_count), 256>>>(tile_lists_.gaussian_ids_,
+            tile_lists_.gaussian_offsets_,
+            means_,
+            conic_opacities_,
+            colors_,
+            camera,
+            image,
+            make_float3(background[0], background[1], background[2]), sampled_contributions);
+    }
     return cudaGetLastError() == cudaSuccess;
 }
 

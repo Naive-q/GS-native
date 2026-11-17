@@ -174,8 +174,19 @@ bool GaussianSplatting::Train(int iterations) {
             GS_NATIVE_ERROR("Iteration {}: target upload failed for {}.", next, source.image_name_);
             return false;
         }
-        if (!renderer_.Render(gaussians_, camera, background_, image_, sh_degree_)) {
+        bool collect_l1 = completed_ >= 4900 && completed_ < 14900;
+        const float* sampled_contributions = nullptr;
+        bool rendered = collect_l1 ?
+            renderer_.Render(gaussians_, camera, background_, image_, sampled_contributions, sh_degree_) :
+            renderer_.Render(gaussians_, camera, background_, image_, sh_degree_);
+        if (!rendered) {
             GS_NATIVE_ERROR("Iteration {}: rendering failed for {}.", next, source.image_name_);
+            return false;
+        }
+        if (collect_l1 &&
+            (!solver_.ComputeTileL1Statistics(camera, renderer_, image_, target_, sampled_contributions,
+                 gaussians_.gaussian_count_) ||
+                !density_.AccumulateL1Statistics(solver_.GetGaussianTileCounts(), gaussians_.gaussian_count_))) {
             return false;
         }
         if (!solver_.Iterate(camera, renderer_, image_, target_, gaussians_, learning_rate, sh_degree_)) {
@@ -184,20 +195,20 @@ bool GaussianSplatting::Train(int iterations) {
         }
         completed_ = next;
         ++camera_cursor_;
-        if (completed_ < 15000) {
-            if (!density_.AccumulateStatistics(solver_.GetProjectionStatistics(), gaussians_.gaussian_count_)) {
+        if (completed_ < 15000 &&
+            !density_.AccumulateStatistics(solver_.GetProjectionStatistics(), gaussians_.gaussian_count_)) {
+            return false;
+        }
+        if (completed_ > 500 && completed_ < 15000 && completed_ % 100 == 0 &&
+            !ControlDensity()) {
+            return false;
+        }
+        if (completed_ < 15000 && completed_ % 3000 == 0) {
+            if (!density_.ResetOpacity(gaussians_.gaussians_, gaussians_.gaussian_count_) ||
+                !solver_.ResetOpacityHistory()) {
                 return false;
             }
-            if (completed_ > 500 && completed_ % 100 == 0 && !ControlDensity()) {
-                return false;
-            }
-            if (completed_ % 3000 == 0) {
-                if (!density_.ResetOpacity(gaussians_.gaussians_, gaussians_.gaussian_count_) ||
-                    !solver_.ResetOpacityHistory()) {
-                    return false;
-                }
-                GS_NATIVE_INFO("Iteration {}: opacity reset, gaussians {}.", completed_, gaussians_.gaussian_count_);
-            }
+            GS_NATIVE_INFO("Iteration {}: opacity reset, gaussians {}.", completed_, gaussians_.gaussian_count_);
         }
         GS_NATIVE_INFO("Iteration {}/{}, completed {}, SH {}, gaussians {}.",
             iteration + 1, iterations, completed_, sh_degree_, gaussians_.gaussian_count_);

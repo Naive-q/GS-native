@@ -166,4 +166,41 @@ TEST_F(DensityTest, SupportsAllPrunedAndEmptyInput) {
     ASSERT_TRUE(empty.Apply(controller, nullptr, 0));
     EXPECT_EQ(empty.stride_, 0);
 }
+
+TEST_F(DensityTest, CountsHitsSplitsOnlyLargeAndClearsStatistics) {
+    auto gaussians = MakeGaussians(4);
+    for (auto& g : gaussians) g.log_scale_.setConstant(std::log(0.05f));
+    gaussians[0].log_scale_.setConstant(std::log(0.005f));
+    DeviceGaussians input(gaussians);
+    DensityController controller;
+    ASSERT_TRUE(controller.Initialize(4, 4));
+    DeviceBuffer<unsigned int> counts(std::vector<unsigned int>{200, 100, 101, 0});
+    ASSERT_TRUE(controller.AccumulateL1Statistics(counts.Get(), 4));
+    DensityResult output;
+    ASSERT_TRUE(output.Apply(controller, input.buffers_.gaussians_, 4));
+    ASSERT_EQ(output.stride_, 5);
+    EXPECT_EQ(ReadDevice(controller.GetParentIds(), 5), (std::vector<int>{0, 1, 3, 2, 2}));
+    DensityResult cleared;
+    ASSERT_TRUE(cleared.Apply(controller, output.parameters_, 5));
+    EXPECT_EQ(cleared.stride_, 5);
+    EXPECT_EQ(cleared.changes_[0], 0);
+}
+
+TEST_F(DensityTest, HitCountsAccumulateAndGradientDoesNotDuplicateSplit) {
+    auto gaussians = MakeGaussians(1);
+    gaussians[0].log_scale_.setConstant(std::log(0.05f));
+    DeviceGaussians input(gaussians);
+    DensityController controller;
+    ASSERT_TRUE(controller.Initialize(1, 1));
+    DeviceBuffer<unsigned int> counts(std::vector<unsigned int>{51});
+    DeviceBuffer<float> gradients(std::vector<float>{1, 1});
+    ASSERT_TRUE(controller.AccumulateL1Statistics(counts.Get(), 1));
+    ASSERT_TRUE(controller.AccumulateL1Statistics(counts.Get(), 1));
+    ASSERT_TRUE(controller.AccumulateStatistics(gradients.Get(), 1));
+    DensityResult output;
+    ASSERT_TRUE(output.Apply(controller, input.buffers_.gaussians_, 1));
+    ASSERT_EQ(output.stride_, 2);
+    EXPECT_EQ(ReadDevice(controller.GetParentIds(), 2), (std::vector<int>{0, 0}));
+}
+
 } // namespace gs_native::test

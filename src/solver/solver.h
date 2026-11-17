@@ -25,6 +25,18 @@ public:
         float position_learning_rate,
         int sh_degree);
 
+    bool ComputeTileL1Statistics(
+        const CameraParams& camera,
+        const Renderer& renderer,
+        const float* image,
+        const uint8_t* target,
+        const float* sampled_contributions,
+        int gaussian_count);
+
+    const unsigned int* GetGaussianTileCounts() const {
+        return gaussian_tile_counts_;
+    }
+
     bool ResetOpacityHistory();
 
     bool RemapGaussians(
@@ -58,6 +70,11 @@ private:
     float* first_moments_ = nullptr;
     float* second_moments_ = nullptr;
     int gaussian_capacity_ = 0;
+
+    float* tile_l1_ = nullptr;
+    int tile_capacity_ = 0;
+    unsigned int* gaussian_tile_counts_ = nullptr;
+    int l1_gaussian_capacity_ = 0;
 
     uint64_t iteration_ = 0;
 };

@@ -24,6 +24,10 @@ public:
         const float* statistics,
         int gaussian_count);
 
+    bool AccumulateL1Statistics(
+        const unsigned int* tile_counts,
+        int gaussian_count);
+
     bool ResetOpacity(
         float* parameters,
         int stride);
@@ -55,6 +59,7 @@ public:
 private:
     bool Reserve(int capacity);
 
+    unsigned int* tile_counts_ = nullptr;
     float* gradient_sums_ = nullptr;
     float* samples_ = nullptr;
     unsigned int* observation_counts_ = nullptr;

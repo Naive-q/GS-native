@@ -22,6 +22,14 @@ public:
         float* image,
         int sh_degree);
 
+    bool Render(
+        const GaussianBuffers& gaussians,
+        const CameraParams& camera,
+        const float* background,
+        float* image,
+        const float*& sampled_contributions,
+        int sh_degree);
+
 private:
     friend class Solver;
 
@@ -37,7 +45,11 @@ private:
     bool RenderTiles(
         const CameraParams& camera,
         const float* background,
-        float* image);
+        float* image,
+        float* sampled_contributions);
+
+    float* sampled_contributions_ = nullptr;
+    int sampled_capacity_ = 0;
 
     float2* means_ = nullptr;
     float4* conic_opacities_ = nullptr;

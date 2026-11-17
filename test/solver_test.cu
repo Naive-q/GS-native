@@ -306,4 +306,86 @@ TEST_F(SolverTest, ProjectionGradientMatchesAcrossSsimBlocksAndPartialEdges) {
     EXPECT_FLOAT_EQ(stats[1], 1);
 }
 
+
+TEST_F(SolverTest, TileHitSamplesMatchAnalyticOcclusionAndClearOldValues) {
+    auto gaussians = MakeGaussians(4);
+    for (int i = 0; i < 4; ++i) {
+        gaussians[i].position_ = Eigen::Vector3f(0, 0, 1.0f + i);
+        gaussians[i].log_scale_.setConstant(std::log(0.2f));
+        gaussians[i].opacity_logit_ = std::log(0.98f / 0.02f);
+    }
+    DeviceGaussians device(gaussians);
+    Renderer renderer;
+    Solver solver;
+    auto camera = MakeCamera(1, 1);
+    DeviceBuffer<float> image(3);
+    DeviceBuffer<uint8_t> target(std::vector<uint8_t>{255, 255, 255});
+    float background[3] = {};
+    ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0));
+    auto ordinary = image.Download();
+    const float* sampled = nullptr;
+    ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), sampled, 0));
+    EXPECT_EQ(ordinary, image.Download());
+    auto weights = ReadDevice(sampled, 4);
+    EXPECT_NEAR(weights[0], 0.98f, 1e-6);
+    EXPECT_NEAR(weights[1], 0.0196f, 1e-6);
+    EXPECT_FLOAT_EQ(weights[2], 0);
+    EXPECT_FLOAT_EQ(weights[3], 0);
+    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 4));
+    EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 4), (std::vector<unsigned int>{1, 1, 0, 0}));
+    auto pixels = image.Download();
+    std::vector<uint8_t> matched(3);
+    for (int c = 0; c < 3; ++c) matched[c] = static_cast<uint8_t>(std::round(pixels[c] * 255));
+    CheckCuda(cudaMemcpy(target.Get(), matched.data(), 3, cudaMemcpyHostToDevice));
+    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 4));
+    EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 4), (std::vector<unsigned int>{0, 0, 0, 0}));
+    for (auto& g : gaussians) g.position_.z() = -1;
+    DeviceGaussians culled(gaussians);
+    ASSERT_TRUE(renderer.Render(culled.buffers_, camera, background, image.Get(), sampled, 0));
+    EXPECT_EQ(ReadDevice(sampled, 4), (std::vector<float>{0, 0, 0, 0}));
+    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 4));
+    EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 4), (std::vector<unsigned int>{0, 0, 0, 0}));
+}
+
+
+TEST_F(SolverTest, TileSamplesMatchCpuAtPartialEdgesAndContributionThreshold) {
+    Renderer renderer;
+    Solver solver;
+    float background[3] = {};
+    for (auto size : {cv::Size(9, 7), cv::Size(65, 33), cv::Size(17, 19), cv::Size(1, 1)}) {
+        for (float opacity : {0.0049f, 0.0051f, 0.5f}) {
+            auto gaussians = MakeGaussians(1);
+            gaussians[0].position_ = Eigen::Vector3f(0, 0, 3);
+            gaussians[0].log_scale_.setConstant(std::log(5.0f));
+            gaussians[0].opacity_logit_ = std::log(opacity / (1 - opacity));
+            DeviceGaussians device(gaussians);
+            auto camera = MakeCamera(size.width, size.height);
+            DeviceBuffer<float> image(size_t(size.area()) * 3);
+            DeviceBuffer<uint8_t> target(std::vector<uint8_t>(size_t(size.area()) * 3, 255));
+            ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0));
+            auto ordinary = image.Download();
+            const float* sampled = nullptr;
+            ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), sampled, 0));
+            EXPECT_EQ(ordinary, image.Download());
+            auto weights = ReadDevice(sampled, camera.tile_count_x_ * camera.tile_count_y_);
+            unsigned int expected = 0;
+            for (int ty = 0; ty < camera.tile_count_y_; ++ty) {
+                for (int tx = 0; tx < camera.tile_count_x_; ++tx) {
+                    int x = tx * 16 + std::min(16, size.width - tx * 16) / 2;
+                    int y = ty * 16 + std::min(16, size.height - ty * 16) / 2;
+                    double dx = camera.cx_ - x, dy = camera.cy_ - y;
+                    double vx = std::pow(camera.fx_ * 5.0 / 3.0, 2) + 0.3;
+                    double vy = std::pow(camera.fy_ * 5.0 / 3.0, 2) + 0.3;
+                    double alpha = opacity * std::exp(-0.5 * (dx * dx / vx + dy * dy / vy));
+                    double weight = alpha < 1.0 / 255 ? 0 : alpha;
+                    EXPECT_NEAR(weights[ty * camera.tile_count_x_ + tx], weight, 2e-6);
+                    expected += weight > 0.005;
+                }
+            }
+            ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 1));
+            EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 1)[0], expected);
+        }
+    }
+}
+
 } // namespace gs_native::test

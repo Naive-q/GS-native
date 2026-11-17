@@ -429,6 +429,66 @@ __global__ void ComputeSplatGradientsKernel(
     }
 }
 
+__global__ void ComputeTileL1Kernel(
+    const float* image,
+    const uint8_t* target,
+    float* tile_l1,
+    int width,
+    int height,
+    int tile_count_x) {
+    __shared__ float warp_sums[8];
+    __shared__ unsigned int warp_counts[8];
+    int t = threadIdx.x;
+    int x = blockIdx.x % tile_count_x * 16 + t % 16;
+    int y = blockIdx.x / tile_count_x * 16 + t / 16;
+    unsigned int valid = x < width && y < height;
+    float sum = 0;
+    if (valid) {
+        int64_t pixel = (static_cast<int64_t>(y) * width + x) * 3;
+        for (int c = 0; c < 3; ++c) {
+            sum += fabsf(image[pixel + c] - target[pixel + c] / 255.0f) / 3.0f;
+        }
+    }
+    for (int offset = 16; offset > 0; offset /= 2) {
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+        valid += __shfl_down_sync(0xffffffffu, valid, offset);
+    }
+    if (t % 32 == 0) {
+        warp_sums[t / 32] = sum;
+        warp_counts[t / 32] = valid;
+    }
+    __syncthreads();
+    if (t < 32) {
+        sum = t < 8 ? warp_sums[t] : 0;
+        valid = t < 8 ? warp_counts[t] : 0;
+        for (int offset = 16; offset > 0; offset /= 2) {
+            sum += __shfl_down_sync(0xffffffffu, sum, offset);
+            valid += __shfl_down_sync(0xffffffffu, valid, offset);
+        }
+        if (t == 0) {
+            tile_l1[blockIdx.x] = valid ? sum / valid : 0;
+        }
+    }
+}
+
+__global__ void AccumulateTileHitsKernel(
+    const float* tile_l1,
+    const float* sampled_contributions,
+    const int* gaussian_ids,
+    const int64_t* gaussian_offsets,
+    unsigned int* tile_counts) {
+    int tile = blockIdx.x;
+    if (!(tile_l1[tile] > 0.07f)) {
+        return;
+    }
+    for (int64_t record = gaussian_offsets[tile] + threadIdx.x;
+            record < gaussian_offsets[tile + 1]; record += blockDim.x) {
+        if (sampled_contributions[record] > 0.005f) {
+            atomicAdd(tile_counts + gaussian_ids[record], 1u);
+        }
+    }
+}
+
 __global__ void CollectProjectionStatisticsKernel(
     const float* gradients,
     const int* record_offsets,
@@ -648,6 +708,8 @@ __global__ void UpdateGaussiansKernel(
 }
 
 Solver::~Solver() {
+    cudaFree(tile_l1_);
+    cudaFree(gaussian_tile_counts_);
     cudaFree(image_gradients_);
     cudaFree(projection_statistics_);
     cudaFree(gaussian_gradients_);
@@ -855,5 +917,47 @@ bool Solver::UpdateGaussians(
     iteration_ = iteration;
     return true;
 }
+
+
+bool Solver::ComputeTileL1Statistics(
+    const CameraParams& camera,
+    const Renderer& renderer,
+    const float* image,
+    const uint8_t* target,
+    const float* sampled_contributions,
+    int gaussian_count) {
+    if (gaussian_count == 0) {
+        return true;
+    }
+    int tile_count = camera.tile_count_x_ * camera.tile_count_y_;
+    if (tile_count > tile_capacity_) {
+        float* replacement = nullptr;
+        if (cudaMalloc(&replacement, static_cast<size_t>(tile_count) * sizeof(float)) != cudaSuccess) {
+            return false;
+        }
+        cudaFree(tile_l1_);
+        tile_l1_ = replacement;
+        tile_capacity_ = tile_count;
+    }
+    if (gaussian_count > l1_gaussian_capacity_) {
+        unsigned int* replacement = nullptr;
+        if (cudaMalloc(&replacement, static_cast<size_t>(gaussian_count) * sizeof(unsigned int)) != cudaSuccess) {
+            return false;
+        }
+        cudaFree(gaussian_tile_counts_);
+        gaussian_tile_counts_ = replacement;
+        l1_gaussian_capacity_ = gaussian_count;
+    }
+    if (cudaMemsetAsync(gaussian_tile_counts_, 0,
+            static_cast<size_t>(gaussian_count) * sizeof(unsigned int)) != cudaSuccess) {
+        return false;
+    }
+    ComputeTileL1Kernel<<<tile_count, 256>>>(image, target, tile_l1_,
+        camera.width_, camera.height_, camera.tile_count_x_);
+    AccumulateTileHitsKernel<<<tile_count, 256>>>(tile_l1_, sampled_contributions,
+        renderer.tile_lists_.gaussian_ids_, renderer.tile_lists_.gaussian_offsets_, gaussian_tile_counts_);
+    return cudaGetLastError() == cudaSuccess;
+}
+
 
 }
