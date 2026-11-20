@@ -306,4 +306,53 @@ TEST_F(SolverTest, ProjectionGradientMatchesAcrossSsimBlocksAndPartialEdges) {
     EXPECT_FLOAT_EQ(stats[1], 1);
 }
 
+TEST_F(SolverTest, AbsoluteProjectionStatisticsMatchPixelwiseFiniteDifferences) {
+    auto camera = MakeCamera(9, 7);
+    auto gaussians = MakeGaussians(1);
+    gaussians[0].position_ = Eigen::Vector3f(0, 0, 3);
+    gaussians[0].log_scale_.setConstant(std::log(0.5f));
+    gaussians[0].sh_.setZero();
+    cv::Mat target(7, 9, CV_8UC3, cv::Scalar(180, 190, 200));
+    auto reference = RenderReference(gaussians, camera, {0, 0, 0}, 0);
+    cv::Mat color_derivatives[2];
+    for (int axis = 0; axis < 2; ++axis) {
+        auto high = camera, low = camera;
+        (axis == 0 ? high.cx_ : high.cy_) += 0.001f;
+        (axis == 0 ? low.cx_ : low.cy_) -= 0.001f;
+        double step = axis == 0 ? high.cx_ - low.cx_ : high.cy_ - low.cy_;
+        color_derivatives[axis] = (RenderReference(gaussians, high, {0, 0, 0}, 0) -
+            RenderReference(gaussians, low, {0, 0, 0}, 0)) / step;
+    }
+    double absolute_sums[2] = {};
+    for (int y = 0; y < camera.height_; ++y) {
+        for (int x = 0; x < camera.width_; ++x) {
+            double contribution[2] = {};
+            for (int channel = 0; channel < 3; ++channel) {
+                auto high = reference.clone(), low = reference.clone();
+                high.at<cv::Vec3d>(y, x)[channel] += 0.0001;
+                low.at<cv::Vec3d>(y, x)[channel] -= 0.0001;
+                double image_gradient = (ComputeLoss(high, target) - ComputeLoss(low, target)) / 0.0002;
+                for (int axis = 0; axis < 2; ++axis) {
+                    contribution[axis] += image_gradient * color_derivatives[axis].at<cv::Vec3d>(y, x)[channel];
+                }
+            }
+            for (int axis = 0; axis < 2; ++axis) {
+                absolute_sums[axis] += std::abs(contribution[axis]);
+            }
+        }
+    }
+    DeviceBuffer<uint8_t> target_device(std::vector<uint8_t>(target.data, target.data + target.total() * 3));
+    DeviceGaussians device(gaussians);
+    Renderer renderer;
+    Solver solver;
+    ASSERT_NO_FATAL_FAILURE(RunStep(camera, target_device, solver, renderer, device, 0));
+    auto statistics = ReadDevice(solver.GetProjectionStatistics(), 2);
+    auto absolute_statistics = ReadDevice(solver.GetAbsoluteProjectionStatistics(), 1);
+    double expected = std::hypot(absolute_sums[0] * camera.width_ * 0.5,
+        absolute_sums[1] * camera.height_ * 0.5);
+    ASSERT_GT(expected, 1e-5);
+    EXPECT_NEAR(absolute_statistics[0], expected, 2e-5 + expected * 0.002);
+    EXPECT_GT(absolute_statistics[0], statistics[0] + 1e-5f);
+}
+
 } // namespace gs_native::test

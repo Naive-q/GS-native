@@ -25,10 +25,10 @@ int main(int argc, char** argv) {
         CheckCuda(cudaMalloc(&parents, sizeof(int)));
         auto prepare = [&] {
             if (!controller.Initialize(options.count_, options.count_) ||
-                !controller.AccumulateStatistics(stats.Get(), options.count_)) throw std::runtime_error("Density setup failed");
+                !controller.AccumulateStatistics(stats.Get(), stats.Get(), options.count_)) throw std::runtime_error("Density setup failed");
         };
         auto control = [&] { return controller.ControlDensity(device.buffers_.gaussians_, output, parents,
-            options.count_, stride, 1, 0.0002, 0.01, 0.005, 0, 42); };
+            options.count_, stride, 1, 0.0002, 0.01, 0.005, 0, 42, nullptr, 0.0008f); };
         prepare();
         if (!control()) throw std::runtime_error("Density validation failed");
         if (stride != expected || ReadDevice(controller.GetGaussianCount(), 1)[0] != expected) {

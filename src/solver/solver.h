@@ -35,6 +35,10 @@ public:
         return projection_statistics_;
     }
 
+    const float* GetAbsoluteProjectionStatistics() const {
+        return absolute_projection_statistics_;
+    }
+
 private:
     bool ComputeImageGradients(
         const CameraParams& camera,
@@ -54,6 +58,7 @@ private:
     int64_t pixel_capacity_ = 0;
 
     float* projection_statistics_ = nullptr;
+    float* absolute_projection_statistics_ = nullptr;
     float* gaussian_gradients_ = nullptr;
     float* first_moments_ = nullptr;
     float* second_moments_ = nullptr;

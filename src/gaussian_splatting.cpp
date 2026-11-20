@@ -185,7 +185,8 @@ bool GaussianSplatting::Train(int iterations) {
         completed_ = next;
         ++camera_cursor_;
         if (completed_ < 15000) {
-            if (!density_.AccumulateStatistics(solver_.GetProjectionStatistics(), gaussians_.gaussian_count_)) {
+            if (!density_.AccumulateStatistics(solver_.GetProjectionStatistics(),
+                    solver_.GetAbsoluteProjectionStatistics(), gaussians_.gaussian_count_)) {
                 return false;
             }
             if (completed_ > 500 && completed_ % 100 == 0 && !ControlDensity()) {
@@ -299,7 +300,7 @@ bool GaussianSplatting::ControlDensity() {
     int count = gaussians_.gaussian_count_;
     if (!density_.ControlDensity(gaussians_.gaussians_, density_output_, parent_ids_, count,
             density_output_stride_, scene_extent_, 0.0002, 0.01, 0.005,
-            completed_ > 3000 ? 20.0 : 0.0, 0, changes)) {
+            completed_ > 3000 ? 20.0 : 0.0, 0, changes, 0.0008f)) {
         return false;
     }
     int next_count = count + changes[0] - changes[1];

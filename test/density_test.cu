@@ -75,8 +75,8 @@ TEST_F(DensityTest, SplitsReproduciblyAndRescalesChildren) {
     DensityController first_controller, second_controller;
     ASSERT_TRUE(first_controller.Initialize(1, 1));
     ASSERT_TRUE(second_controller.Initialize(1, 1));
-    ASSERT_TRUE(first_controller.AccumulateStatistics(statistics.Get(), 1));
-    ASSERT_TRUE(second_controller.AccumulateStatistics(statistics.Get(), 1));
+    ASSERT_TRUE(first_controller.AccumulateStatistics(statistics.Get(), statistics.Get(), 1));
+    ASSERT_TRUE(second_controller.AccumulateStatistics(statistics.Get(), statistics.Get(), 1));
     DensityResult first, second;
     ASSERT_TRUE(first.Apply(first_controller, input.buffers_.gaussians_, 1));
     ASSERT_TRUE(second.Apply(second_controller, input.buffers_.gaussians_, 1));
@@ -112,8 +112,8 @@ TEST_F(DensityTest, AveragesRoundStatisticsBeforeSelecting) {
         SCOPED_TRACE(::testing::Message() << "threshold=" << threshold);
         DensityController controller;
         ASSERT_TRUE(controller.Initialize(1, 1));
-        ASSERT_TRUE(controller.AccumulateStatistics(first.Get(), 1));
-        ASSERT_TRUE(controller.AccumulateStatistics(second.Get(), 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(first.Get(), first.Get(), 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(second.Get(), second.Get(), 1));
         DensityResult output;
         ASSERT_TRUE(output.Apply(controller, input.buffers_.gaussians_, 1, threshold));
         EXPECT_EQ(output.stride_, threshold < 0.2 ? 2 : 1);
@@ -166,4 +166,50 @@ TEST_F(DensityTest, SupportsAllPrunedAndEmptyInput) {
     ASSERT_TRUE(empty.Apply(controller, nullptr, 0));
     EXPECT_EQ(empty.stride_, 0);
 }
+TEST_F(DensityTest, UsesSignedGradientsForClonesAndAbsoluteGradientsForSplits) {
+    auto gaussians = MakeGaussians(6);
+    for (int id = 0; id < 6; ++id) {
+        gaussians[id].log_scale_.setConstant(std::log(id < 2 ? 0.005f : 0.02f));
+    }
+    gaussians[5].log_scale_.setConstant(std::log(0.01f));
+    DeviceGaussians input(gaussians);
+    DeviceBuffer<float> statistics(std::vector<float>{
+        0.0003f, 0.0001f, 0.0003f, 0.0001f, 0.0003f, 0.0003f, 1, 1, 1, 1, 1, 1});
+    DeviceBuffer<float> absolute_statistics(std::vector<float>{
+        0.001f, 0.001f, 0.0007f, 0.001f, 0.001f, 0.0007f});
+    DensityController controller;
+    ASSERT_TRUE(controller.Initialize(6, 6));
+    ASSERT_TRUE(controller.AccumulateStatistics(statistics.Get(), absolute_statistics.Get(), 6));
+    DensityResult output;
+    ASSERT_TRUE(controller.ControlDensity(input.buffers_.gaussians_, output.parameters_, output.parents_,
+        6, output.stride_, 1.0, 0.0002, 0.01, 0.005, 0.0, 42, output.changes_, 0.0008f));
+    ASSERT_EQ(output.stride_, 10);
+    EXPECT_EQ(ReadDevice(controller.GetParentIds(), 10), (std::vector<int>{0, 1, 2, 5, 0, 5, 3, 4, 3, 4}));
+    EXPECT_EQ(ReadDevice(output.parents_, 10), (std::vector<int>{0, 1, 2, 5, -1, -1, -1, -1, -1, -1}));
+    DensityResult next;
+    ASSERT_TRUE(controller.ControlDensity(output.parameters_, next.parameters_, next.parents_,
+        10, next.stride_, 1.0, 0.0002, 0.01, 0.005, 0.0, 42, next.changes_, 0.0008f));
+    EXPECT_EQ(next.stride_, 10);
+    EXPECT_EQ(next.changes_[0], 0);
+}
+
+TEST_F(DensityTest, AveragesAbsoluteStatisticsWithSharedObservationCounts) {
+    auto gaussians = MakeGaussians(1);
+    gaussians[0].log_scale_.setConstant(std::log(0.02f));
+    DeviceGaussians input(gaussians);
+    DeviceBuffer<float> statistics(std::vector<float>{0.0f, 1.0f});
+    DeviceBuffer<float> first(std::vector<float>{0.0007f});
+    DeviceBuffer<float> second(std::vector<float>{0.001f});
+    for (float threshold : {0.00084f, 0.00086f}) {
+        DensityController controller;
+        ASSERT_TRUE(controller.Initialize(1, 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(statistics.Get(), first.Get(), 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(statistics.Get(), second.Get(), 1));
+        DensityResult output;
+        ASSERT_TRUE(controller.ControlDensity(input.buffers_.gaussians_, output.parameters_, output.parents_,
+            1, output.stride_, 1.0, 0.0002, 0.01, 0.005, 0.0, 42, output.changes_, threshold));
+        EXPECT_EQ(output.stride_, threshold < 0.00085f ? 2 : 1);
+    }
+}
+
 } // namespace gs_native::test

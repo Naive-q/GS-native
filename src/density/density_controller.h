@@ -22,6 +22,7 @@ public:
 
     bool AccumulateStatistics(
         const float* statistics,
+        const float* absolute_statistics,
         int gaussian_count);
 
     bool ResetOpacity(
@@ -40,7 +41,8 @@ public:
         double min_opacity = 0.005,
         double max_screen_size = 0.0,
         unsigned long long seed = 0,
-        int* changes = nullptr);
+        int* changes = nullptr,
+        float absolute_gradient_threshold = 0.0f);
 
     const int* GetGaussianCount() const {
         return control_;
@@ -56,6 +58,7 @@ private:
     bool Reserve(int capacity);
 
     float* gradient_sums_ = nullptr;
+    float* absolute_gradient_sums_ = nullptr;
     float* samples_ = nullptr;
     unsigned int* observation_counts_ = nullptr;
     int* output_counts_ = nullptr;
