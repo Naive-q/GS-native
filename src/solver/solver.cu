@@ -415,76 +415,68 @@ __global__ void ComputeSplatGradientsKernel(
             }
 
             if (__any_sync(0xffffffffu, has_contribution)) {
-                float sum_x = contribution[0];
-                float sum_y = contribution[1];
-                float absolute_x = fabsf(sum_x);
-                float absolute_y = fabsf(sum_y);
+                float value_0 = contribution[0];
+                float value_1 = contribution[1];
+                float value_9 = fabsf(contribution[0]);
+                float value_10 = fabsf(contribution[1]);
+                float value_2 = contribution[2];
+                float value_3 = contribution[3];
+                float value_4 = contribution[4];
+                float value_5 = contribution[5];
+                float value_6 = contribution[6];
+                float value_7 = contribution[7];
+                float value_8 = contribution[8];
                 for (int stride = 16; stride > 0; stride /= 2) {
-                    sum_x += __shfl_down_sync(0xffffffffu, sum_x, stride);
-                    sum_y += __shfl_down_sync(0xffffffffu, sum_y, stride);
-                    absolute_x += __shfl_down_sync(0xffffffffu, absolute_x, stride);
-                    absolute_y += __shfl_down_sync(0xffffffffu, absolute_y, stride);
+                    value_0 += __shfl_down_sync(0xffffffffu, value_0, stride);
+                    value_1 += __shfl_down_sync(0xffffffffu, value_1, stride);
+                    value_9 += __shfl_down_sync(0xffffffffu, value_9, stride);
+                    value_10 += __shfl_down_sync(0xffffffffu, value_10, stride);
+                    value_2 += __shfl_down_sync(0xffffffffu, value_2, stride);
+                    value_3 += __shfl_down_sync(0xffffffffu, value_3, stride);
+                    value_4 += __shfl_down_sync(0xffffffffu, value_4, stride);
+                    value_5 += __shfl_down_sync(0xffffffffu, value_5, stride);
+                    value_6 += __shfl_down_sync(0xffffffffu, value_6, stride);
+                    value_7 += __shfl_down_sync(0xffffffffu, value_7, stride);
+                    value_8 += __shfl_down_sync(0xffffffffu, value_8, stride);
                 }
-                if (t % 32 == 0) {
-                    int id = shared_ids[j];
-                    if (sum_x != 0.0f) {
-                        atomicAdd(gradients + id, sum_x);
-                    }
-                    if (sum_y != 0.0f) {
-                        atomicAdd(gradients + count + id, sum_y);
-                    }
-                    if (absolute_x != 0.0f) {
-                        atomicAdd(absolute_statistics + id, absolute_x);
-                    }
-                    if (absolute_y != 0.0f) {
-                        atomicAdd(absolute_statistics + count + id, absolute_y);
-                    }
-                }
-                {
-                    float sum_2 = contribution[2];
-                    float sum_3 = contribution[3];
-                    float sum_4 = contribution[4];
-                    float sum_5 = contribution[5];
-                    for (int stride = 16; stride > 0; stride /= 2) {
-                        sum_2 += __shfl_down_sync(0xffffffffu, sum_2, stride);
-                        sum_3 += __shfl_down_sync(0xffffffffu, sum_3, stride);
-                        sum_4 += __shfl_down_sync(0xffffffffu, sum_4, stride);
-                        sum_5 += __shfl_down_sync(0xffffffffu, sum_5, stride);
-                    }
-                    if (t % 32 == 0) {
-                        if (sum_2 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(2) * count + shared_ids[j], sum_2);
-                        }
-                        if (sum_3 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(3) * count + shared_ids[j], sum_3);
-                        }
-                        if (sum_4 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(4) * count + shared_ids[j], sum_4);
-                        }
-                        if (sum_5 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(5) * count + shared_ids[j], sum_5);
-                        }
-                    }
-                }
-                {
-                    float sum_6 = contribution[6];
-                    float sum_7 = contribution[7];
-                    float sum_8 = contribution[8];
-                    for (int stride = 16; stride > 0; stride /= 2) {
-                        sum_6 += __shfl_down_sync(0xffffffffu, sum_6, stride);
-                        sum_7 += __shfl_down_sync(0xffffffffu, sum_7, stride);
-                        sum_8 += __shfl_down_sync(0xffffffffu, sum_8, stride);
-                    }
-                    if (t % 32 == 0) {
-                        if (sum_6 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(6) * count + shared_ids[j], sum_6);
-                        }
-                        if (sum_7 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(7) * count + shared_ids[j], sum_7);
-                        }
-                        if (sum_8 != 0.0f) {
-                            atomicAdd(gradients + static_cast<int64_t>(8) * count + shared_ids[j], sum_8);
-                        }
+                float broadcast_0 = __shfl_sync(0xffffffffu, value_0, 0);
+                float broadcast_1 = __shfl_sync(0xffffffffu, value_1, 0);
+                float broadcast_9 = __shfl_sync(0xffffffffu, value_9, 0);
+                float broadcast_10 = __shfl_sync(0xffffffffu, value_10, 0);
+                float broadcast_2 = __shfl_sync(0xffffffffu, value_2, 0);
+                float broadcast_3 = __shfl_sync(0xffffffffu, value_3, 0);
+                float broadcast_4 = __shfl_sync(0xffffffffu, value_4, 0);
+                float broadcast_5 = __shfl_sync(0xffffffffu, value_5, 0);
+                float broadcast_6 = __shfl_sync(0xffffffffu, value_6, 0);
+                float broadcast_7 = __shfl_sync(0xffffffffu, value_7, 0);
+                float broadcast_8 = __shfl_sync(0xffffffffu, value_8, 0);
+                if (t % 32 < 11) {
+                    int lane = t % 32;
+                    float value = lane == 0 ?
+                        broadcast_0 :
+                        lane == 1 ?
+                        broadcast_1 :
+                        lane == 2 ?
+                        broadcast_2 :
+                        lane == 3 ?
+                        broadcast_3 :
+                        lane == 4 ?
+                        broadcast_4 :
+                        lane == 5 ?
+                        broadcast_5 :
+                        lane == 6 ?
+                        broadcast_6 :
+                        lane == 7 ?
+                        broadcast_7 :
+                        lane == 8 ?
+                        broadcast_8 :
+                        lane == 9 ?
+                        broadcast_9 :
+                        broadcast_10;
+                    int field = lane < 9 ? lane : lane - 9;
+                    float* output = lane < 9 ? gradients : absolute_statistics;
+                    if (value != 0.0f) {
+                        atomicAdd(output + static_cast<int64_t>(field) * count + shared_ids[j], value);
                     }
                 }
             }
