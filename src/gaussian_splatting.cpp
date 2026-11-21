@@ -175,16 +175,13 @@ bool GaussianSplatting::Train(int iterations) {
             return false;
         }
         bool collect_l1 = completed_ >= 4900 && completed_ < 14900;
-        const float* sampled_contributions = nullptr;
-        bool rendered = collect_l1 ?
-            renderer_.Render(gaussians_, camera, background_, image_, sampled_contributions, sh_degree_) :
-            renderer_.Render(gaussians_, camera, background_, image_, sh_degree_);
+        bool rendered = renderer_.Render(gaussians_, camera, background_, image_, sh_degree_, collect_l1);
         if (!rendered) {
             GS_NATIVE_ERROR("Iteration {}: rendering failed for {}.", next, source.image_name_);
             return false;
         }
         if (collect_l1 &&
-            (!solver_.ComputeTileL1Statistics(camera, renderer_, image_, target_, sampled_contributions,
+            (!solver_.ComputeTileL1Statistics(camera, renderer_, image_, target_,
                  gaussians_.gaussian_count_) ||
                 !density_.AccumulateL1Statistics(solver_.GetGaussianTileCounts(), gaussians_.gaussian_count_))) {
             return false;

@@ -323,27 +323,26 @@ TEST_F(SolverTest, TileHitSamplesMatchAnalyticOcclusionAndClearOldValues) {
     float background[3] = {};
     ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0));
     auto ordinary = image.Download();
-    const float* sampled = nullptr;
-    ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), sampled, 0));
+    ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0, true));
     EXPECT_EQ(ordinary, image.Download());
-    auto weights = ReadDevice(sampled, 4);
+    auto weights = ReadDevice(renderer.GetSampledContributions(), 4);
     EXPECT_NEAR(weights[0], 0.98f, 1e-6);
     EXPECT_NEAR(weights[1], 0.0196f, 1e-6);
     EXPECT_FLOAT_EQ(weights[2], 0);
     EXPECT_FLOAT_EQ(weights[3], 0);
-    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 4));
+    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), 4));
     EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 4), (std::vector<unsigned int>{1, 1, 0, 0}));
     auto pixels = image.Download();
     std::vector<uint8_t> matched(3);
     for (int c = 0; c < 3; ++c) matched[c] = static_cast<uint8_t>(std::round(pixels[c] * 255));
     CheckCuda(cudaMemcpy(target.Get(), matched.data(), 3, cudaMemcpyHostToDevice));
-    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 4));
+    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), 4));
     EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 4), (std::vector<unsigned int>{0, 0, 0, 0}));
     for (auto& g : gaussians) g.position_.z() = -1;
     DeviceGaussians culled(gaussians);
-    ASSERT_TRUE(renderer.Render(culled.buffers_, camera, background, image.Get(), sampled, 0));
-    EXPECT_EQ(ReadDevice(sampled, 4), (std::vector<float>{0, 0, 0, 0}));
-    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 4));
+    ASSERT_TRUE(renderer.Render(culled.buffers_, camera, background, image.Get(), 0, true));
+    EXPECT_EQ(ReadDevice(renderer.GetSampledContributions(), 4), (std::vector<float>{0, 0, 0, 0}));
+    ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), 4));
     EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 4), (std::vector<unsigned int>{0, 0, 0, 0}));
 }
 
@@ -364,10 +363,11 @@ TEST_F(SolverTest, TileSamplesMatchCpuAtPartialEdgesAndContributionThreshold) {
             DeviceBuffer<uint8_t> target(std::vector<uint8_t>(size_t(size.area()) * 3, 255));
             ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0));
             auto ordinary = image.Download();
-            const float* sampled = nullptr;
-            ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), sampled, 0));
+            ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0, true));
             EXPECT_EQ(ordinary, image.Download());
-            auto weights = ReadDevice(sampled, camera.tile_count_x_ * camera.tile_count_y_);
+            auto weights = ReadDevice(renderer.GetSampledContributions(), camera.tile_count_x_ * camera.tile_count_y_);
+            ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0));
+            EXPECT_EQ(ordinary, image.Download());
             unsigned int expected = 0;
             for (int ty = 0; ty < camera.tile_count_y_; ++ty) {
                 for (int tx = 0; tx < camera.tile_count_x_; ++tx) {
@@ -382,7 +382,8 @@ TEST_F(SolverTest, TileSamplesMatchCpuAtPartialEdgesAndContributionThreshold) {
                     expected += weight > 0.005;
                 }
             }
-            ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), sampled, 1));
+            ASSERT_TRUE(renderer.Render(device.buffers_, camera, background, image.Get(), 0, true));
+            ASSERT_TRUE(solver.ComputeTileL1Statistics(camera, renderer, image.Get(), target.Get(), 1));
             EXPECT_EQ(ReadDevice(solver.GetGaussianTileCounts(), 1)[0], expected);
         }
     }

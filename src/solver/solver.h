@@ -30,7 +30,6 @@ public:
         const Renderer& renderer,
         const float* image,
         const uint8_t* target,
-        const float* sampled_contributions,
         int gaussian_count);
 
     const unsigned int* GetGaussianTileCounts() const {

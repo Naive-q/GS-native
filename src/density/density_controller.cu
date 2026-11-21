@@ -92,11 +92,11 @@ __global__ void CountDensityOutputsKernel(
     }
     bool selected = gradient >= gradient_threshold;
     bool clone = selected && max_scale <= split_threshold;
-    bool split = (selected || tile_counts[id] > 100u) && max_scale > split_threshold;
+    bool split = max_scale > split_threshold && (selected || tile_counts[id] > 100u);
     float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * input_stride + id]));
 
     float output_scale = max_scale;
-    if (split) {
+    if (split && prune_large) {
         float x = expf(logf(scale[0] / 1.6f));
         float y = expf(logf(scale[1] / 1.6f));
         float z = expf(logf(scale[2] / 1.6f));
@@ -405,12 +405,17 @@ bool DensityController::Initialize(
     if (!control_ && cudaMalloc(&control_, 8 * sizeof(int) + 2 * sizeof(unsigned long long)) != cudaSuccess) {
         return false;
     }
+    int previous_capacity = capacity_;
     if (!Reserve(std::max(capacity, 1))) {
         return false;
     }
-    if (cudaMemsetAsync(tile_counts_, 0, sizeof(unsigned int) * capacity_) != cudaSuccess ||
-        cudaMemsetAsync(gradient_sums_, 0, sizeof(float) * capacity_) != cudaSuccess ||
-        cudaMemsetAsync(observation_counts_, 0, sizeof(unsigned int) * capacity_) != cudaSuccess) {
+    if (capacity_ == previous_capacity &&
+        cudaMemsetAsync(tile_counts_, 0, sizeof(unsigned int) * capacity_) != cudaSuccess) {
+        return false;
+    }
+    if (previous_capacity > 0 &&
+        (cudaMemsetAsync(gradient_sums_, 0, sizeof(float) * previous_capacity) != cudaSuccess ||
+            cudaMemsetAsync(observation_counts_, 0, sizeof(unsigned int) * previous_capacity) != cudaSuccess)) {
         return false;
     }
     int device = 0, sm_count = 0, threads_per_sm = 0;

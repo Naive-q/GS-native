@@ -284,6 +284,7 @@ __global__ void RenderTilesKernel(
     __shared__ float2 shared_means[256];
     __shared__ float4 shared_conic_opacities[256];
     __shared__ float3 shared_colors[256];
+    __shared__ float4 shared_sampled_colors[256];
     int t = threadIdx.x;
     int tile = blockIdx.x;
     int x = tile % camera.tile_count_x_ * kTileSize + t % kTileSize;
@@ -306,7 +307,13 @@ __global__ void RenderTilesKernel(
             int id = gaussian_ids[base + t];
             shared_means[t] = means[id];
             shared_conic_opacities[t] = conic_opacities[id];
-            shared_colors[t] = colors[id];
+            if (Sample) {
+                float3 value = colors[id];
+                shared_sampled_colors[t] = make_float4(value.x, value.y, value.z, 0.0f);
+            }
+            else {
+                shared_colors[t] = colors[id];
+            }
         }
         __syncthreads();
         int batch = static_cast<int>(min(static_cast<int64_t>(256), end - base));
@@ -329,14 +336,17 @@ __global__ void RenderTilesKernel(
             }
             float weight = alpha * transmittance;
             if (Sample && sample_pixel) {
-                sampled_contributions[base + j] = weight;
+                shared_sampled_colors[j].w = weight;
             }
-            color.x += shared_colors[j].x * weight;
-            color.y += shared_colors[j].y * weight;
-            color.z += shared_colors[j].z * weight;
+            color.x += (Sample ? shared_sampled_colors[j].x : shared_colors[j].x) * weight;
+            color.y += (Sample ? shared_sampled_colors[j].y : shared_colors[j].y) * weight;
+            color.z += (Sample ? shared_sampled_colors[j].z : shared_colors[j].z) * weight;
             transmittance = next_transmittance;
         }
         __syncthreads();
+        if (Sample && base + t < end) {
+            sampled_contributions[base + t] = shared_sampled_colors[t].w;
+        }
     }
     if (inside) {
         float* pixel = image + (static_cast<int64_t>(y) * camera.width_ + x) * 3;
@@ -371,26 +381,16 @@ bool Renderer::Render(
     const CameraParams& camera,
     const float* background,
     float* image,
-    int sh_degree) {
+    int sh_degree,
+    bool collect_samples) {
     if (!ProjectGaussians(gaussians, camera, sh_degree)) {
         return false;
     }
     if (!BuildTileLists(gaussians, camera)) {
         return false;
     }
-    return RenderTiles(camera, background, image, nullptr);
-}
-
-bool Renderer::Render(
-    const GaussianBuffers& gaussians,
-    const CameraParams& camera,
-    const float* background,
-    float* image,
-    const float*& sampled_contributions,
-    int sh_degree) {
-    sampled_contributions = nullptr;
-    if (!ProjectGaussians(gaussians, camera, sh_degree) || !BuildTileLists(gaussians, camera)) {
-        return false;
+    if (!collect_samples) {
+        return RenderTiles(camera, background, image, nullptr);
     }
     if (record_capacity_ > sampled_capacity_) {
         float* replacement = nullptr;
@@ -408,7 +408,6 @@ bool Renderer::Render(
     if (!RenderTiles(camera, background, image, sampled_contributions_)) {
         return false;
     }
-    sampled_contributions = sampled_contributions_;
     return true;
 }
 

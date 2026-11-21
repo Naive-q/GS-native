@@ -446,7 +446,13 @@ __global__ void ComputeTileL1Kernel(
     if (valid) {
         int64_t pixel = (static_cast<int64_t>(y) * width + x) * 3;
         for (int c = 0; c < 3; ++c) {
-            sum += fabsf(image[pixel + c] - target[pixel + c] / 255.0f) / 3.0f;
+            float value = target[pixel + c];
+            float normalized = __fmul_rn(value, 1.0f / 255.0f);
+            normalized = __fmaf_rn(__fmaf_rn(-normalized, 255.0f, value), 1.0f / 255.0f, normalized);
+            float error = fabsf(__ldg(image + pixel + c) - normalized);
+            float third = __fmul_rn(error, 1.0f / 3.0f);
+            third = __fmaf_rn(__fmaf_rn(-third, 3.0f, error), 1.0f / 3.0f, third);
+            sum += isfinite(error) ? third : error;
         }
     }
     for (int offset = 16; offset > 0; offset /= 2) {
@@ -477,14 +483,16 @@ __global__ void AccumulateTileHitsKernel(
     const int* gaussian_ids,
     const int64_t* gaussian_offsets,
     unsigned int* tile_counts) {
-    int tile = blockIdx.x;
-    if (!(tile_l1[tile] > 0.07f)) {
+    int tile = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32;
+    if (!(__ldg(tile_l1 + tile) > 0.07f)) {
         return;
     }
-    for (int64_t record = gaussian_offsets[tile] + threadIdx.x;
-            record < gaussian_offsets[tile + 1]; record += blockDim.x) {
-        if (sampled_contributions[record] > 0.005f) {
-            atomicAdd(tile_counts + gaussian_ids[record], 1u);
+    unsigned int end = static_cast<unsigned int>(__ldg(gaussian_offsets + tile + 1));
+    for (unsigned int record = static_cast<unsigned int>(__ldg(gaussian_offsets + tile)) + threadIdx.x % 32;
+            record < end; record += 32) {
+        int id = __ldg(gaussian_ids + record);
+        if (__ldg(sampled_contributions + record) > 0.005f) {
+            atomicAdd(tile_counts + id, 1u);
         }
     }
 }
@@ -841,9 +849,9 @@ bool Solver::ComputeGaussianGradients(
     int64_t tiles = static_cast<int64_t>(camera.tile_count_x_) * camera.tile_count_y_;
     if (count < 0 || !gaussians.gaussians_ || !image || !image_gradients_ ||
         camera.width_ <= 0 || camera.height_ <= 0 || pixels > pixel_capacity_ ||
-        camera.tile_count_x_ <= 0 || camera.tile_count_y_ <= 0 || tiles > renderer.tile_capacity_ ||
-        count > renderer.gaussian_capacity_ || !renderer.tile_lists_.gaussian_offsets_ ||
-        !renderer.means_ || !renderer.conic_opacities_ || !renderer.colors_) {
+        camera.tile_count_x_ <= 0 || camera.tile_count_y_ <= 0 || tiles > renderer.GetTileCapacity() ||
+        count > renderer.GetGaussianCapacity() || !renderer.GetTileGaussianOffsets() ||
+        !renderer.GetMeans() || !renderer.GetConicOpacities() || !renderer.GetColors()) {
         return false;
     }
     if (count != gaussian_capacity_) {
@@ -856,18 +864,18 @@ bool Solver::ComputeGaussianGradients(
             static_cast<size_t>(count) * kMaxParamCount * sizeof(float)) != cudaSuccess) {
         return false;
     }
-    ComputeSplatGradientsKernel<<<static_cast<unsigned int>(tiles), 256>>>(renderer.tile_lists_.gaussian_ids_,
-        renderer.tile_lists_.gaussian_offsets_,
-        renderer.means_,
-        renderer.conic_opacities_,
-        renderer.colors_,
+    ComputeSplatGradientsKernel<<<static_cast<unsigned int>(tiles), 256>>>(renderer.GetTileGaussianIds(),
+        renderer.GetTileGaussianOffsets(),
+        renderer.GetMeans(),
+        renderer.GetConicOpacities(),
+        renderer.GetColors(),
         image,
         image_gradients_,
         camera,
         gaussian_gradients_,
         count);
     CollectProjectionStatisticsKernel<<<static_cast<unsigned int>((count + 255ll) / 256), 256>>>(
-        gaussian_gradients_, renderer.record_offsets_, projection_statistics_,
+        gaussian_gradients_, renderer.GetRecordOffsets(), projection_statistics_,
         count, camera.width_, camera.height_);
     sh_degree = std::clamp(sh_degree, 0, 3);
     int grid = static_cast<int>((count + 255ll) / 256);
@@ -924,7 +932,6 @@ bool Solver::ComputeTileL1Statistics(
     const Renderer& renderer,
     const float* image,
     const uint8_t* target,
-    const float* sampled_contributions,
     int gaussian_count) {
     if (gaussian_count == 0) {
         return true;
@@ -954,8 +961,16 @@ bool Solver::ComputeTileL1Statistics(
     }
     ComputeTileL1Kernel<<<tile_count, 256>>>(image, target, tile_l1_,
         camera.width_, camera.height_, camera.tile_count_x_);
-    AccumulateTileHitsKernel<<<tile_count, 256>>>(tile_l1_, sampled_contributions,
-        renderer.tile_lists_.gaussian_ids_, renderer.tile_lists_.gaussian_offsets_, gaussian_tile_counts_);
+    int paired_tiles = tile_count / 2 * 2;
+    if (paired_tiles > 0) {
+        AccumulateTileHitsKernel<<<paired_tiles / 2, 64>>>(tile_l1_, renderer.GetSampledContributions(),
+            renderer.GetTileGaussianIds(), renderer.GetTileGaussianOffsets(), gaussian_tile_counts_);
+    }
+    if (paired_tiles < tile_count) {
+        AccumulateTileHitsKernel<<<tile_count - paired_tiles, 32>>>(tile_l1_ + paired_tiles,
+            renderer.GetSampledContributions(), renderer.GetTileGaussianIds(),
+            renderer.GetTileGaussianOffsets() + paired_tiles, gaussian_tile_counts_);
+    }
     return cudaGetLastError() == cudaSuccess;
 }
 
