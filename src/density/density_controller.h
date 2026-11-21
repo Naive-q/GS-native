@@ -17,8 +17,11 @@ public:
         int gaussian_count,
         int capacity);
 
-    bool
-    AccumulateStatistics(const float* gradients, const float* radii, const int* gaussian_ids, int observation_count);
+    bool AccumulateStatistics(
+        const float* gradients,
+        const float* radii,
+        const int* gaussian_ids,
+        int observation_count);
 
     bool AccumulateStatistics(
         const float* statistics,
@@ -49,9 +52,11 @@ public:
     const int* GetGaussianCount() const {
         return control_;
     }
+
     const int* GetStatus() const {
         return control_ ? control_ + 2 : nullptr;
     }
+
     const int* GetParentIds() const {
         return samples_ ? reinterpret_cast<const int*>(samples_ + capacity_) : nullptr;
     }
