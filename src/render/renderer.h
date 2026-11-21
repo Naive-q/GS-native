@@ -22,9 +22,39 @@ public:
         float* image,
         int sh_degree);
 
-private:
-    friend class Solver;
+    const float2* GetMeans() const {
+        return means_;
+    }
 
+    const float4* GetConicOpacities() const {
+        return conic_opacities_;
+    }
+
+    const float3* GetColors() const {
+        return colors_;
+    }
+
+    const int* GetTileGaussianIds() const {
+        return tile_lists_.gaussian_ids_;
+    }
+
+    const int64_t* GetTileGaussianOffsets() const {
+        return tile_lists_.gaussian_offsets_;
+    }
+
+    const int* GetRecordOffsets() const {
+        return record_offsets_;
+    }
+
+    int GetGaussianCapacity() const {
+        return gaussian_capacity_;
+    }
+
+    int GetTileCapacity() const {
+        return tile_capacity_;
+    }
+
+private:
     bool ProjectGaussians(
         const GaussianBuffers& gaussians,
         const CameraParams& camera,

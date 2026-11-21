@@ -23,7 +23,7 @@ __constant__ float c_ssim_kernel[11] = {1.028380120e-03f,
     7.598758210e-03f,
     1.028380120e-03f};
 
-__global__ __launch_bounds__(512) void ComputeImageGradientsKernel(
+__global__ __launch_bounds__(512, 3) void ComputeImageGradientsKernel(
     const float* image,
     const uint8_t* target,
     float* gradients,
@@ -847,9 +847,9 @@ bool Solver::ComputeGaussianGradients(
     int64_t tiles = static_cast<int64_t>(camera.tile_count_x_) * camera.tile_count_y_;
     if (count < 0 || !gaussians.gaussians_ || !image || !image_gradients_ ||
         camera.width_ <= 0 || camera.height_ <= 0 || pixels > pixel_capacity_ ||
-        camera.tile_count_x_ <= 0 || camera.tile_count_y_ <= 0 || tiles > renderer.tile_capacity_ ||
-        count > renderer.gaussian_capacity_ || !renderer.tile_lists_.gaussian_offsets_ ||
-        !renderer.means_ || !renderer.conic_opacities_ || !renderer.colors_) {
+        camera.tile_count_x_ <= 0 || camera.tile_count_y_ <= 0 || tiles > renderer.GetTileCapacity() ||
+        count > renderer.GetGaussianCapacity() || !renderer.GetTileGaussianOffsets() ||
+        !renderer.GetMeans() || !renderer.GetConicOpacities() || !renderer.GetColors()) {
         return false;
     }
     if (count != gaussian_capacity_) {
@@ -864,11 +864,11 @@ bool Solver::ComputeGaussianGradients(
             static_cast<size_t>(count) * 2 * sizeof(float)) != cudaSuccess) {
         return false;
     }
-    ComputeSplatGradientsKernel<<<static_cast<unsigned int>(tiles), 256>>>(renderer.tile_lists_.gaussian_ids_,
-        renderer.tile_lists_.gaussian_offsets_,
-        renderer.means_,
-        renderer.conic_opacities_,
-        renderer.colors_,
+    ComputeSplatGradientsKernel<<<static_cast<unsigned int>(tiles), 256>>>(renderer.GetTileGaussianIds(),
+        renderer.GetTileGaussianOffsets(),
+        renderer.GetMeans(),
+        renderer.GetConicOpacities(),
+        renderer.GetColors(),
         image,
         image_gradients_,
         camera,
@@ -876,7 +876,7 @@ bool Solver::ComputeGaussianGradients(
         absolute_projection_statistics_,
         count);
     CollectProjectionStatisticsKernel<<<static_cast<unsigned int>((count + 255ll) / 256), 256>>>(
-        gaussian_gradients_, renderer.record_offsets_, projection_statistics_, absolute_projection_statistics_,
+        gaussian_gradients_, renderer.GetRecordOffsets(), projection_statistics_, absolute_projection_statistics_,
         count, camera.width_, camera.height_);
     sh_degree = std::clamp(sh_degree, 0, 3);
     int grid = static_cast<int>((count + 255ll) / 256);
