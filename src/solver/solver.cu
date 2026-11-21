@@ -23,7 +23,7 @@ __constant__ float c_ssim_kernel[11] = {1.028380120e-03f,
     7.598758210e-03f,
     1.028380120e-03f};
 
-__global__ __launch_bounds__(512) void ComputeImageGradientsKernel(
+__global__ __launch_bounds__(512, 3) void ComputeImageGradientsKernel(
     const float* image,
     const uint8_t* target,
     float* gradients,
@@ -414,11 +414,13 @@ __global__ void ComputeSplatGradientsKernel(
             }
 
             if (__any_sync(0xffffffffu, has_contribution)) {
+                for (int stride = 16; stride > 0; stride /= 2) {
+                    for (int field = 0; field < 9; ++field) {
+                        contribution[field] += __shfl_down_sync(0xffffffffu, contribution[field], stride);
+                    }
+                }
                 for (int field = 0; field < 9; ++field) {
                     float sum = contribution[field];
-                    for (int stride = 16; stride > 0; stride /= 2) {
-                        sum += __shfl_down_sync(0xffffffffu, sum, stride);
-                    }
                     if (t % 32 == 0 && sum != 0.0f) {
                         atomicAdd(gradients + static_cast<int64_t>(field) * count + shared_ids[j], sum);
                     }
@@ -449,7 +451,7 @@ __global__ void ComputeTileL1Kernel(
             float value = target[pixel + c];
             float normalized = __fmul_rn(value, 1.0f / 255.0f);
             normalized = __fmaf_rn(__fmaf_rn(-normalized, 255.0f, value), 1.0f / 255.0f, normalized);
-            float error = fabsf(__ldg(image + pixel + c) - normalized);
+            float error = fabsf(__ldcs(image + pixel + c) - normalized);
             float third = __fmul_rn(error, 1.0f / 3.0f);
             third = __fmaf_rn(__fmaf_rn(-third, 3.0f, error), 1.0f / 3.0f, third);
             sum += isfinite(error) ? third : error;
@@ -961,15 +963,15 @@ bool Solver::ComputeTileL1Statistics(
     }
     ComputeTileL1Kernel<<<tile_count, 256>>>(image, target, tile_l1_,
         camera.width_, camera.height_, camera.tile_count_x_);
-    int paired_tiles = tile_count / 2 * 2;
-    if (paired_tiles > 0) {
-        AccumulateTileHitsKernel<<<paired_tiles / 2, 64>>>(tile_l1_, renderer.GetSampledContributions(),
+    int grouped_tiles = tile_count / 8 * 8;
+    if (grouped_tiles > 0) {
+        AccumulateTileHitsKernel<<<grouped_tiles / 8, 256>>>(tile_l1_, renderer.GetSampledContributions(),
             renderer.GetTileGaussianIds(), renderer.GetTileGaussianOffsets(), gaussian_tile_counts_);
     }
-    if (paired_tiles < tile_count) {
-        AccumulateTileHitsKernel<<<tile_count - paired_tiles, 32>>>(tile_l1_ + paired_tiles,
+    if (grouped_tiles < tile_count) {
+        AccumulateTileHitsKernel<<<tile_count - grouped_tiles, 32>>>(tile_l1_ + grouped_tiles,
             renderer.GetSampledContributions(), renderer.GetTileGaussianIds(),
-            renderer.GetTileGaussianOffsets() + paired_tiles, gaussian_tile_counts_);
+            renderer.GetTileGaussianOffsets() + grouped_tiles, gaussian_tile_counts_);
     }
     return cudaGetLastError() == cudaSuccess;
 }
