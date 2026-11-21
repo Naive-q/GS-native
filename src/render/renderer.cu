@@ -228,19 +228,19 @@ __global__ void WriteTileRecordsKernel(
     int* gaussian_ids,
     int count,
     int tile_count_x) {
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    int id = blockIdx.x * (blockDim.x / 4) + threadIdx.x / 4;
     if (id >= count || record_offsets[id] == record_offsets[id + 1]) {
         return;
     }
     int4 rect = tile_rects[id];
-    int record = record_offsets[id];
+    unsigned int width = rect.z - rect.x;
+    unsigned int total = record_offsets[id + 1] - record_offsets[id];
+    unsigned int begin = record_offsets[id];
     uint64_t depth = __float_as_uint(depths[id]);
-    for (int y = rect.y; y < rect.w; ++y) {
-        for (int x = rect.x; x < rect.z; ++x) {
-            uint64_t tile = static_cast<uint64_t>(y) * tile_count_x + x;
-            keys[record] = (tile << 32) | depth;
-            gaussian_ids[record++] = id;
-        }
+    for (unsigned int local = threadIdx.x % 4; local < total; local += 4) {
+        uint64_t tile = static_cast<uint64_t>(rect.y + local / width) * tile_count_x + rect.x + local % width;
+        keys[begin + local] = (tile << 32) | depth;
+        gaussian_ids[begin + local] = id;
     }
 }
 
@@ -531,7 +531,7 @@ bool Renderer::BuildTileLists(
         record_capacity_ = records;
         tile_lists_.capacity_ = records;
     }
-    WriteTileRecordsKernel<<<(count + 255ll) / 256, 256>>>(tile_rects_,
+    WriteTileRecordsKernel<<<(4ll * count + 255) / 256, 256>>>(tile_rects_,
         depths_,
         record_offsets_,
         keys_,
