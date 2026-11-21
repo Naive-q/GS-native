@@ -27,7 +27,8 @@ public:
 
     bool ResetOpacity(
         float* parameters,
-        int stride);
+        int stride,
+        float max_opacity = 0.01f);
 
     bool ControlDensity(
         const float* parameters,

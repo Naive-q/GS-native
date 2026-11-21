@@ -621,11 +621,12 @@ bool DensityController::AccumulateStatistics(
 
 bool DensityController::ResetOpacity(
     float* parameters,
-    int stride) {
-    if (!control_ || stride != parameter_stride_ || (!parameters && stride > 0)) {
+    int stride,
+    float max_opacity) {
+    if (!control_ || stride != parameter_stride_ || (!parameters && stride > 0) ||
+        !std::isfinite(max_opacity) || max_opacity <= 0.0f || max_opacity >= 1.0f) {
         return false;
     }
-    float max_opacity = 0.01f;
     float max_opacity_parameter = std::log(max_opacity / (1.0f - max_opacity));
     ResetDensityOpacityKernel<<<GetGridSize(stride, kBlockSize), kBlockSize>>>(control_,
         parameters,

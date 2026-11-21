@@ -136,18 +136,32 @@ TEST_F(DensityTest, PrunesOversizedGaussiansWhenEnabled) {
 }
 
 TEST_F(DensityTest, ResetsOpacityWithoutChangingOtherFields) {
-    auto gaussians = MakeGaussians(3);
-    gaussians[1].opacity_logit_ = -9;
-    gaussians[2].opacity_logit_ = std::log(0.01f / 0.99f);
-    DeviceGaussians input(gaussians);
-    DensityController controller;
-    ASSERT_TRUE(controller.Initialize(3, 3));
-    ASSERT_TRUE(controller.ResetOpacity(input.buffers_.gaussians_, 3));
-    auto actual = input.parameters_.Download(), original = PackGaussians(gaussians);
-    for (int field = 0; field < kMaxParamCount; ++field) {
-        for (int i = 0; i < 3; ++i) {
-            float expected = field == kOpacityIndex ? std::min(original[field * 3 + i], std::log(0.01f / 0.99f)) : original[field * 3 + i];
-            EXPECT_FLOAT_EQ(actual[field * 3 + i], expected);
+    auto gaussians = MakeGaussians(4);
+    gaussians[0].opacity_logit_ = std::log(0.95f / 0.05f);
+    gaussians[1].opacity_logit_ = std::log(0.2f / 0.8f);
+    gaussians[2].opacity_logit_ = std::log(0.8f / 0.2f);
+    gaussians[3].opacity_logit_ = -9;
+    auto original = PackGaussians(gaussians);
+    for (float max_opacity : {0.8f, 0.01f}) {
+        SCOPED_TRACE(::testing::Message() << "max_opacity=" << max_opacity);
+        DeviceGaussians input(gaussians);
+        DensityController controller;
+        ASSERT_TRUE(controller.Initialize(4, 4));
+        if (max_opacity == 0.01f) {
+            ASSERT_TRUE(controller.ResetOpacity(input.buffers_.gaussians_, 4));
+        }
+        else {
+            ASSERT_TRUE(controller.ResetOpacity(input.buffers_.gaussians_, 4, max_opacity));
+        }
+        auto actual = input.parameters_.Download();
+        float limit = std::log(max_opacity / (1.0f - max_opacity));
+        for (int field = 0; field < kMaxParamCount; ++field) {
+            for (int i = 0; i < 4; ++i) {
+                float expected = field == kOpacityIndex ?
+                    std::min(original[field * 4 + i], limit) :
+                    original[field * 4 + i];
+                EXPECT_FLOAT_EQ(actual[field * 4 + i], expected);
+            }
         }
     }
 }

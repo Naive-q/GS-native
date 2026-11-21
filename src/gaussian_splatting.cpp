@@ -192,12 +192,14 @@ bool GaussianSplatting::Train(int iterations) {
             if (completed_ > 500 && completed_ % 100 == 0 && !ControlDensity()) {
                 return false;
             }
-            if (completed_ % 3000 == 0) {
-                if (!density_.ResetOpacity(gaussians_.gaussians_, gaussians_.gaussian_count_) ||
+            if (completed_ % 500 == 0) {
+                float max_opacity = completed_ % 3000 == 0 ? 0.01f : 0.8f;
+                if (!density_.ResetOpacity(gaussians_.gaussians_, gaussians_.gaussian_count_, max_opacity) ||
                     !solver_.ResetOpacityHistory()) {
                     return false;
                 }
-                GS_NATIVE_INFO("Iteration {}: opacity reset, gaussians {}.", completed_, gaussians_.gaussian_count_);
+                GS_NATIVE_INFO("Iteration {}: opacity capped at {}, gaussians {}.",
+                    completed_, max_opacity, gaussians_.gaussian_count_);
             }
         }
         GS_NATIVE_INFO("Iteration {}/{}, completed {}, SH {}, gaussians {}.",
