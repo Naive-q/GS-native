@@ -9,6 +9,6 @@ namespace gs_native {
 struct PointCloud {
     std::vector<Eigen::Vector3f> positions_;
     std::vector<Eigen::Vector3f> colors_;
-};
+}; // struct PointCloud
 
-}
+} // namespace gs_native

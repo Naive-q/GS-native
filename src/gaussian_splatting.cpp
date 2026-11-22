@@ -18,8 +18,6 @@ GaussianSplatting::~GaussianSplatting() {
     cudaFree(gaussians_.gaussians_);
     cudaFree(image_);
     cudaFree(target_);
-    cudaFree(density_output_);
-    cudaFree(parent_ids_);
 }
 
 bool GaussianSplatting::Initialize(const Scene& scene) {
@@ -299,27 +297,29 @@ bool GaussianSplatting::Save(const std::string& path) {
 }
 
 bool GaussianSplatting::ControlDensity() {
-    if (!parent_ids_ && cudaMalloc(&parent_ids_, sizeof(int)) != cudaSuccess) {
-        return false;
-    }
-
+    int previous_count = gaussians_.gaussian_count_;
     int changes[2] = {};
-    int count = gaussians_.gaussian_count_;
-    if (!density_.ControlDensity(gaussians_.gaussians_, density_output_, parent_ids_, count,
-            density_output_stride_, scene_extent_, 0.0002, 0.01, 0.005,
-            completed_ > 3000 ? 20.0 : 0.0, 0, changes)) {
+    if (!density_.ControlDensity(
+            gaussians_,
+            scene_extent_,
+            0.0002f,
+            0.01f,
+            0.005f,
+            completed_ > 3000 ? 20.0f : 0.0f,
+            0,
+            changes)) {
+        GS_NATIVE_ERROR("Iteration {}: density control failed.", completed_);
         return false;
     }
-    int next_count = count + changes[0] - changes[1];
-    if (!solver_.RemapGaussians(parent_ids_, next_count)) {
+    if (!solver_.RemapGaussians(
+            density_.GetHistoryParentIds(),
+            gaussians_.gaussian_count_)) {
+        GS_NATIVE_ERROR("Iteration {}: remapping Adam history after density control failed.", completed_);
         return false;
     }
-    std::swap(gaussians_.gaussians_, density_output_);
-    gaussians_.gaussian_count_ = next_count;
-    density_output_stride_ = count;
     GS_NATIVE_INFO("Iteration {}: density control, gaussians {} -> {}, added {}, removed {}.",
-        completed_, count, next_count, changes[0], changes[1]);
+        completed_, previous_count, gaussians_.gaussian_count_, changes[0], changes[1]);
     return true;
 }
 
-}
+} // namespace gs_native

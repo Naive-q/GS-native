@@ -43,7 +43,7 @@ public:
     std::unique_ptr<spdlog::custom_flag_formatter> clone() const override {
         return std::make_unique<LogScopeFormatter>();
     }
-};
+}; // class LogScopeFormatter
 
 inline spdlog::logger* GetLogInstance() {
     static spdlog::logger* logger = [] {
@@ -55,7 +55,7 @@ inline spdlog::logger* GetLogInstance() {
     return logger;
 }
 
-}
+} // namespace gs_native
 
 #define GS_NATIVE_INFO(...) SPDLOG_LOGGER_INFO(gs_native::GetLogInstance(), __VA_ARGS__)
 #define GS_NATIVE_WARN(...) SPDLOG_LOGGER_WARN(gs_native::GetLogInstance(), __VA_ARGS__)

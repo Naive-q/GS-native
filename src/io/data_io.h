@@ -21,4 +21,4 @@ bool ReadGaussiansPly(
     const std::string& path,
     std::vector<Gaussian>& gaussians);
 
-}
+} // namespace gs_native

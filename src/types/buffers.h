@@ -25,19 +25,19 @@ struct CameraParams {
 
     int tile_count_x_, tile_count_y_;
     int tile_offset_;
-};
+}; // struct CameraParams
 
 struct GaussianBuffers {
     float* gaussians_ = nullptr;
     int gaussian_count_ = 0;
-};
+}; // struct GaussianBuffers
 
 struct ViewBuffers {
     CameraParams* cameras_ = nullptr;
     int camera_count_ = 0;
     int tile_count_ = 0;
     uint8_t* images_ = nullptr;
-};
+}; // struct ViewBuffers
 
 struct TileListBuffers {
     int* gaussian_ids_ = nullptr;
@@ -45,7 +45,7 @@ struct TileListBuffers {
     int* gaussian_counts_ = nullptr;
     int64_t* gaussian_offsets_ = nullptr;
     int64_t capacity_ = 0;
-};
+}; // struct TileListBuffers
 
 struct ColorGroupBuffers {
     int* colors_ = nullptr;
@@ -55,6 +55,6 @@ struct ColorGroupBuffers {
     int GetColorCount() const {
         return static_cast<int>(offsets_.size()) - 1;
     }
-};
+}; // struct ColorGroupBuffers
 
-}
+} // namespace gs_native

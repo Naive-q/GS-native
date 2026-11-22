@@ -39,6 +39,6 @@ struct Gaussian {
     float GetOpacity() const {
         return 1.0f / (1.0f + std::exp(-opacity_logit_));
     }
-};
+}; // struct Gaussian
 
-}
+} // namespace gs_native

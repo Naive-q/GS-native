@@ -715,7 +715,7 @@ __global__ void UpdateGaussiansKernel(
         (sqrtf(second * second_correction) + 1e-15f);
 }
 
-}
+} // namespace
 
 Solver::~Solver() {
     cudaFree(tile_l1_);
@@ -977,4 +977,4 @@ bool Solver::ComputeTileL1Statistics(
 }
 
 
-}
+} // namespace gs_native

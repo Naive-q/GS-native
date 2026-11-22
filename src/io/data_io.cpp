@@ -37,7 +37,7 @@ struct ColmapCamera {
     float fy_ = 0.0f;
     float cx_ = 0.0f;
     float cy_ = 0.0f;
-};
+}; // struct ColmapCamera
 
 struct ColmapImage {
     int id_ = 0;
@@ -46,7 +46,7 @@ struct ColmapImage {
     cv::Mat R_c_w_;
     cv::Mat t_c_w_;
     std::vector<int64_t> point3d_ids_;
-};
+}; // struct ColmapImage
 
 template<typename T> T ReadValue(std::ifstream& file) {
     T value{};
@@ -324,7 +324,7 @@ void WritePlyHeader(
     file << "end_header\n";
 }
 
-}
+} // namespace
 
 bool ReadColmapScene(
     const std::string& scene_dir,
@@ -589,4 +589,4 @@ bool WriteGaussiansPly(
     return true;
 }
 
-}
+} // namespace gs_native

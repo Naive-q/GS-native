@@ -356,7 +356,7 @@ __global__ void RenderTilesKernel(
     }
 }
 
-}
+} // namespace
 
 Renderer::~Renderer() {
     cudaFree(sampled_contributions_);
@@ -642,4 +642,4 @@ bool Renderer::RenderTiles(
     return cudaGetLastError() == cudaSuccess;
 }
 
-}
+} // namespace gs_native
