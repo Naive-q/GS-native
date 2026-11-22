@@ -79,6 +79,7 @@ __global__ void CountDensityChangesKernel(
         density_counts[id] = make_int4(0, 0, 0, 0);
         return;
     }
+    float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * gaussian_count + id]));
     float gradient = observation_counts[id] ? gradient_sums[id] / observation_counts[id] : 0;
     if (isnan(gradient)) {
         gradient = 0;
@@ -98,7 +99,6 @@ __global__ void CountDensityChangesKernel(
         absolute_gradient >= absolute_gradient_threshold :
         selected;
     bool split = split_selected && max_scale > split_threshold;
-    float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * gaussian_count + id]));
 
     float remaining_max_scale = max_scale;
     if (split && prune_large) {

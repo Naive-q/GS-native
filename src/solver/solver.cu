@@ -764,24 +764,30 @@ bool Solver::RemapGaussians(
     if (gaussian_count < 0) {
         return false;
     }
-    float* statistics = nullptr;
-    float* absolute_statistics = nullptr;
-    float* gradients = nullptr;
+    float* statistics = gaussian_count > 0 && gaussian_count <= gaussian_capacity_ ?
+        projection_statistics_ :
+        nullptr;
+    float* absolute_statistics = gaussian_count > 0 && gaussian_count <= gaussian_capacity_ ?
+        absolute_projection_statistics_ :
+        nullptr;
+    float* gradients = gaussian_count > 0 && gaussian_count <= gaussian_capacity_ ?
+        gaussian_gradients_ :
+        nullptr;
     float* first = nullptr;
     float* second = nullptr;
     if (gaussian_count > 0) {
         size_t bytes = static_cast<size_t>(gaussian_count) * kMaxParamCount * sizeof(float);
-        cudaError_t result = cudaMalloc(&gradients, bytes);
+        cudaError_t result = gradients ? cudaSuccess : cudaMalloc(&gradients, bytes);
         if (result == cudaSuccess) {
             result = cudaMalloc(&first, bytes);
         }
         if (result == cudaSuccess) {
             result = cudaMalloc(&second, bytes);
         }
-        if (result == cudaSuccess) {
+        if (result == cudaSuccess && !statistics) {
             result = cudaMalloc(&statistics, static_cast<size_t>(gaussian_count) * 2 * sizeof(float));
         }
-        if (result == cudaSuccess) {
+        if (result == cudaSuccess && !absolute_statistics) {
             result = cudaMalloc(&absolute_statistics, static_cast<size_t>(gaussian_count) * 2 * sizeof(float));
         }
         if (result == cudaSuccess) {
@@ -794,17 +800,29 @@ bool Solver::RemapGaussians(
             }
         }
         if (result != cudaSuccess) {
-            cudaFree(statistics);
-            cudaFree(absolute_statistics);
-            cudaFree(gradients);
+            if (statistics != projection_statistics_) {
+                cudaFree(statistics);
+            }
+            if (absolute_statistics != absolute_projection_statistics_) {
+                cudaFree(absolute_statistics);
+            }
+            if (gradients != gaussian_gradients_) {
+                cudaFree(gradients);
+            }
             cudaFree(first);
             cudaFree(second);
             return false;
         }
     }
-    cudaFree(projection_statistics_);
-    cudaFree(absolute_projection_statistics_);
-    cudaFree(gaussian_gradients_);
+    if (statistics != projection_statistics_) {
+        cudaFree(projection_statistics_);
+    }
+    if (absolute_statistics != absolute_projection_statistics_) {
+        cudaFree(absolute_projection_statistics_);
+    }
+    if (gradients != gaussian_gradients_) {
+        cudaFree(gaussian_gradients_);
+    }
     cudaFree(first_moments_);
     cudaFree(second_moments_);
     projection_statistics_ = statistics;
