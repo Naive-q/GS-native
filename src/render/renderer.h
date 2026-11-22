@@ -86,6 +86,6 @@ private:
     int record_capacity_ = 0;
     void* temp_storage_ = nullptr;
     size_t temp_storage_bytes_ = 0;
-};
+}; // class Renderer
 
-}
+} // namespace gs_native

@@ -314,4 +314,4 @@ bool GaussianSplatting::ControlDensity() {
     return true;
 }
 
-}
+} // namespace gs_native

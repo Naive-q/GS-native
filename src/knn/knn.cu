@@ -175,7 +175,7 @@ __global__ void QueryNeighbors(
     }
 }
 
-}
+} // namespace
 
 std::vector<float> ComputeMeanDist2Cuda(const std::vector<Eigen::Vector3f>& points) {
     int count = static_cast<int>(points.size());
@@ -254,4 +254,4 @@ std::vector<float> ComputeMeanDist2Cuda(const std::vector<Eigen::Vector3f>& poin
     return result;
 }
 
-}
+} // namespace gs_native

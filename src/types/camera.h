@@ -15,6 +15,6 @@ struct Camera {
     cv::Mat t_c_w_ = cv::Mat::zeros(3, 1, CV_32F);
     float feature_depth_low_ = std::numeric_limits<float>::min();
     float feature_depth_high_ = std::numeric_limits<float>::max();
-};
+}; // struct Camera
 
-}
+} // namespace gs_native

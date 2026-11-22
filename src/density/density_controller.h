@@ -76,6 +76,6 @@ private:
     int parameter_stride_ = 0;
     int random_blocks_ = 0;
     unsigned long long seed_ = 0;
-};
+}; // class DensityController
 
-}
+} // namespace gs_native

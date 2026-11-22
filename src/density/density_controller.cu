@@ -21,7 +21,7 @@ struct AddDensityCounts {
         int4 second) const {
         return make_int4(first.x + second.x, first.y + second.y, first.z + second.z, first.w + second.w);
     }
-};
+}; // struct AddDensityCounts
 
 __global__ void InitializeDensityKernel(
     int* control,
@@ -295,7 +295,7 @@ __global__ void ResetDensityOpacityKernel(
     parameters[index] = fminf(parameters[index], max_opacity_parameter);
 }
 
-}
+} // namespace
 
 DensityController::~DensityController() {
     cudaFree(spare_gaussian_parameters_);
@@ -609,4 +609,4 @@ bool DensityController::ResetOpacity(
     return cudaGetLastError() == cudaSuccess;
 }
 
-}
+} // namespace gs_native

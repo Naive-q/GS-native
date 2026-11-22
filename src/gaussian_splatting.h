@@ -50,6 +50,6 @@ private:
     int sh_degree_ = 0;
     float scene_extent_ = 0.0f;
     float background_[3] = {0.0f, 0.0f, 0.0f};
-};
+}; // class GaussianSplatting
 
-}
+} // namespace gs_native
