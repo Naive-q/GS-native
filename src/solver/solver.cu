@@ -322,7 +322,7 @@ __device__ void ComputeEquationSh(
     }
 }
 
-__global__ void ComputeSplatGradientsKernel(
+__global__ __launch_bounds__(256, 5) void ComputeSplatGradientsKernel(
     const int* ids,
     const int64_t* offsets,
     const float2* means,
@@ -337,6 +337,7 @@ __global__ void ComputeSplatGradientsKernel(
     __shared__ float2 shared_means[256];
     __shared__ float4 shared_conics[256];
     __shared__ float3 shared_colors[256];
+    __shared__ float4 warp_sums[8][3];
     int t = threadIdx.x;
     int tile = blockIdx.x;
     int x = tile % camera.tile_count_x_ * 16 + t % 16;
@@ -419,11 +420,20 @@ __global__ void ComputeSplatGradientsKernel(
                         contribution[field] += __shfl_down_sync(0xffffffffu, contribution[field], stride);
                     }
                 }
-                for (int field = 0; field < 9; ++field) {
-                    float sum = contribution[field];
-                    if (t % 32 == 0 && sum != 0.0f) {
-                        atomicAdd(gradients + static_cast<int64_t>(field) * count + shared_ids[j], sum);
-                    }
+                if (t % 32 == 0) {
+                    warp_sums[t / 32][0] = make_float4(contribution[0], contribution[1], contribution[2], contribution[3]);
+                    warp_sums[t / 32][1] = make_float4(contribution[4], contribution[5], contribution[6], contribution[7]);
+                    warp_sums[t / 32][2] = make_float4(contribution[8], 0.0f, 0.0f, 0.0f);
+                }
+                __syncwarp();
+                int lane = t % 32;
+                float value = 0.0f;
+                if (lane < 9) {
+                    value = reinterpret_cast<float*>(warp_sums)[(t / 32) * 12 + lane];
+                }
+                __syncwarp();
+                if (lane < 9 && value != 0.0f) {
+                    atomicAdd(gradients + static_cast<int64_t>(lane) * count + shared_ids[j], value);
                 }
             }
         }
