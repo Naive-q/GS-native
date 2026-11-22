@@ -65,6 +65,6 @@ private:
     int gaussian_capacity_ = 0;
 
     uint64_t iteration_ = 0;
-};
+}; // class Solver
 
-}
+} // namespace gs_native

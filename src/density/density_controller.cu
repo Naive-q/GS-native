@@ -21,7 +21,7 @@ struct AddDensityCounts {
         int4 second) const {
         return make_int4(first.x + second.x, first.y + second.y, first.z + second.z, first.w + second.w);
     }
-};
+}; // struct AddDensityCounts
 
 __global__ void InitializeDensityKernel(
     int* control,
@@ -57,14 +57,14 @@ __global__ void AccumulateDensityStatisticsKernel(
     atomicAdd(observation_counts + id, 1u);
 }
 
-__global__ void CountDensityOutputsKernel(
+__global__ void CountDensityChangesKernel(
     const float* parameters,
     const float* gradient_sums,
     const float* absolute_gradient_sums,
     const unsigned int* observation_counts,
     const int* control,
-    int4* output_counts,
-    int input_stride,
+    int4* density_counts,
+    int gaussian_count,
     float gradient_threshold,
     float split_threshold,
     float min_opacity,
@@ -72,11 +72,11 @@ __global__ void CountDensityOutputsKernel(
     bool prune_large,
     float absolute_gradient_threshold) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
-    if (id > input_stride) {
+    if (id > gaussian_count) {
         return;
     }
-    if (id == input_stride || id >= control[0]) {
-        output_counts[id] = make_int4(0, 0, 0, 0);
+    if (id == gaussian_count || id >= control[0]) {
+        density_counts[id] = make_int4(0, 0, 0, 0);
         return;
     }
     float gradient = observation_counts[id] ? gradient_sums[id] / observation_counts[id] : 0;
@@ -85,7 +85,7 @@ __global__ void CountDensityOutputsKernel(
     }
     float scale[3];
     for (int axis = 0; axis < 3; ++axis) {
-        scale[axis] = expf(parameters[static_cast<int64_t>(kLogScaleIndex + axis) * input_stride + id]);
+        scale[axis] = expf(parameters[static_cast<int64_t>(kLogScaleIndex + axis) * gaussian_count + id]);
     }
     float max_scale = fmaxf(scale[0], fmaxf(scale[1], scale[2]));
     if (isnan(scale[0]) || isnan(scale[1]) || isnan(scale[2])) {
@@ -98,26 +98,29 @@ __global__ void CountDensityOutputsKernel(
         absolute_gradient >= absolute_gradient_threshold :
         selected;
     bool split = split_selected && max_scale > split_threshold;
-    float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * input_stride + id]));
+    float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * gaussian_count + id]));
 
-    float output_scale = max_scale;
+    float remaining_max_scale = max_scale;
     if (split && prune_large) {
         float x = expf(logf(scale[0] / 1.6f));
         float y = expf(logf(scale[1] / 1.6f));
         float z = expf(logf(scale[2] / 1.6f));
-        output_scale = fmaxf(x, fmaxf(y, z));
+        remaining_max_scale = fmaxf(x, fmaxf(y, z));
         if (isnan(x) || isnan(y) || isnan(z)) {
-            output_scale = nanf("");
+            remaining_max_scale = nanf("");
         }
     }
-    bool remove = opacity < min_opacity || (prune_large && output_scale > max_world_size);
+    bool remove = opacity < min_opacity || (prune_large && remaining_max_scale > max_world_size);
 
-    output_counts[id] = make_int4(!split && !remove, clone && !remove, split, split && !remove);
+    density_counts[id] = make_int4(!split && !remove, clone && !remove, split, split && !remove);
 }
 
-__global__ void
-PrepareDensityOutputsKernel(const int4* output_offsets, int* control, int input_stride, int random_blocks) {
-    int4 totals = output_offsets[input_stride];
+__global__ void PrepareDensityControlKernel(
+    const int4* density_offsets,
+    int* control,
+    int gaussian_count,
+    int random_blocks) {
+    int4 totals = density_offsets[gaussian_count];
     control[7] = control[0];
     control[1] = totals.x + totals.y + 2 * totals.w;
     control[2] = 0;
@@ -132,8 +135,11 @@ PrepareDensityOutputsKernel(const int4* output_offsets, int* control, int input_
     offsets[1] = offsets[0] + (numel ? ((numel - 1) / (4ull * threads) + 1) * 4ull : 0ull);
 }
 
-__global__ void
-GenerateDensitySamplesKernel(const int* control, float* samples, int random_blocks, unsigned long long seed) {
+__global__ void GenerateDensitySamplesKernel(
+    const int* control,
+    float* samples,
+    int random_blocks,
+    unsigned long long seed) {
     int64_t numel = 6ll * control[3];
     if (numel == 0) {
         return;
@@ -159,21 +165,21 @@ GenerateDensitySamplesKernel(const int* control, float* samples, int random_bloc
     }
 }
 
-__global__ void WriteDensityOutputsKernel(
+__global__ void WriteDensityGaussiansKernel(
     const float* parameters,
-    const int4* output_counts,
-    const int4* output_offsets,
+    const int4* density_counts,
+    const int4* density_offsets,
     const int* control,
     const float* samples,
-    float* output,
-    int* parent_ids,
-    int input_stride,
-    int output_stride) {
+    float* gaussian_parameters,
+    int* history_parent_ids,
+    int gaussian_count,
+    int next_gaussian_count) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id >= control[0]) {
         return;
     }
-    int4 counts = output_counts[id], offsets = output_offsets[id];
+    int4 counts = density_counts[id], offsets = density_offsets[id];
     bool split = counts.w != 0;
     if (!counts.x && !counts.y && !split) {
         return;
@@ -181,11 +187,11 @@ __global__ void WriteDensityOutputsKernel(
     float scale[3], rotation[9];
     if (split) {
         for (int axis = 0; axis < 3; ++axis) {
-            scale[axis] = expf(parameters[static_cast<int64_t>(kLogScaleIndex + axis) * input_stride + id]);
+            scale[axis] = expf(parameters[static_cast<int64_t>(kLogScaleIndex + axis) * gaussian_count + id]);
         }
-        float x = parameters[static_cast<int64_t>(kRotationIndex) * input_stride + id];
-        float y = parameters[static_cast<int64_t>(kRotationIndex + 1) * input_stride + id];
-        float z = parameters[static_cast<int64_t>(kRotationIndex + 2) * input_stride + id];
+        float x = parameters[static_cast<int64_t>(kRotationIndex) * gaussian_count + id];
+        float y = parameters[static_cast<int64_t>(kRotationIndex + 1) * gaussian_count + id];
+        float z = parameters[static_cast<int64_t>(kRotationIndex + 2) * gaussian_count + id];
         float angle = sqrtf(x * x + y * y + z * z);
         float a = 1.0f, b = 0.5f;
         if (angle > 1e-4f) {
@@ -214,7 +220,7 @@ __global__ void WriteDensityOutputsKernel(
             control[4] + control[5] + child * control[6] + offsets.w :
             (child == 0 && counts.x ? offsets.x : control[4] + offsets.y);
         for (int parameter = 0; parameter < kMaxParamCount; ++parameter) {
-            float value = parameters[static_cast<int64_t>(parameter) * input_stride + id];
+            float value = parameters[static_cast<int64_t>(parameter) * gaussian_count + id];
             if (split && parameter < kPositionIndex + 3) {
                 float delta = 0;
                 for (int axis = 0; axis < 3; ++axis) {
@@ -227,11 +233,11 @@ __global__ void WriteDensityOutputsKernel(
             else if (split && parameter >= kLogScaleIndex && parameter < kLogScaleIndex + 3) {
                 value = logf(scale[parameter - kLogScaleIndex] / 1.6f);
             }
-            output[static_cast<int64_t>(parameter) * output_stride + destination] = value;
+            gaussian_parameters[static_cast<int64_t>(parameter) * next_gaussian_count + destination] = value;
         }
-        if (parent_ids) {
+        if (history_parent_ids) {
 
-            parent_ids[destination] = !split && child == 0 && counts.x ? id : -1;
+            history_parent_ids[destination] = !split && child == 0 && counts.x ? id : -1;
         }
     }
 }
@@ -240,8 +246,8 @@ __global__ void FinishDensityControlKernel(
     float* gradient_sums,
     float* absolute_gradient_sums,
     unsigned int* observation_counts,
-    const int4* output_counts,
-    const int4* output_offsets,
+    const int4* density_counts,
+    const int4* density_offsets,
     float* samples,
     int* control,
     int capacity) {
@@ -252,7 +258,7 @@ __global__ void FinishDensityControlKernel(
         observation_counts[id] = 0;
     }
     if (id < control[7]) {
-        int4 counts = output_counts[id], offsets = output_offsets[id];
+        int4 counts = density_counts[id], offsets = density_offsets[id];
         bool split = counts.w != 0;
         int count = split ? 2 : counts.x + counts.y;
         for (int child = 0; child < count; ++child) {
@@ -300,15 +306,17 @@ __global__ void ResetDensityOpacityKernel(
     parameters[index] = fminf(parameters[index], max_opacity_parameter);
 }
 
-}
+} // namespace
 
 DensityController::~DensityController() {
+    cudaFree(spare_gaussian_parameters_);
+    cudaFree(history_parent_ids_);
     cudaFree(gradient_sums_);
     cudaFree(absolute_gradient_sums_);
     cudaFree(samples_);
     cudaFree(observation_counts_);
-    cudaFree(output_counts_);
-    cudaFree(output_offsets_);
+    cudaFree(density_counts_);
+    cudaFree(density_offsets_);
     cudaFree(control_);
     cudaFree(scan_storage_);
 }
@@ -321,21 +329,21 @@ bool DensityController::Reserve(int capacity) {
     float* absolute_gradient_sums = nullptr;
     float* samples = nullptr;
     unsigned int* observation_counts = nullptr;
-    int* output_counts = nullptr;
-    int* output_offsets = nullptr;
+    int* density_counts = nullptr;
+    int* density_offsets = nullptr;
     size_t bytes = static_cast<size_t>(capacity) * sizeof(int);
     if (cudaMalloc(&gradient_sums, bytes) != cudaSuccess ||
         cudaMalloc(&absolute_gradient_sums, bytes) != cudaSuccess ||
         cudaMalloc(&observation_counts, bytes) != cudaSuccess ||
-        cudaMalloc(&output_counts, 4 * (bytes + sizeof(int))) != cudaSuccess ||
-        cudaMalloc(&output_offsets, 4 * (bytes + sizeof(int))) != cudaSuccess ||
+        cudaMalloc(&density_counts, 4 * (bytes + sizeof(int))) != cudaSuccess ||
+        cudaMalloc(&density_offsets, 4 * (bytes + sizeof(int))) != cudaSuccess ||
         cudaMalloc(&samples, 6 * bytes) != cudaSuccess) {
         cudaFree(gradient_sums);
         cudaFree(absolute_gradient_sums);
         cudaFree(samples);
         cudaFree(observation_counts);
-        cudaFree(output_counts);
-        cudaFree(output_offsets);
+        cudaFree(density_counts);
+        cudaFree(density_offsets);
         return false;
     }
     cudaError_t result = cudaSuccess;
@@ -352,14 +360,14 @@ bool DensityController::Reserve(int capacity) {
                 cudaMemcpyDeviceToDevice);
         }
         if (result == cudaSuccess) {
-            result = cudaMemcpyAsync(output_counts,
-                output_counts_,
+            result = cudaMemcpyAsync(density_counts,
+                density_counts_,
                 sizeof(int4) * (static_cast<size_t>(capacity_) + 1),
                 cudaMemcpyDeviceToDevice);
         }
         if (result == cudaSuccess) {
-            result = cudaMemcpyAsync(output_offsets,
-                output_offsets_,
+            result = cudaMemcpyAsync(density_offsets,
+                density_offsets_,
                 sizeof(int4) * (static_cast<size_t>(capacity_) + 1),
                 cudaMemcpyDeviceToDevice);
         }
@@ -378,22 +386,22 @@ bool DensityController::Reserve(int capacity) {
         cudaFree(absolute_gradient_sums);
         cudaFree(samples);
         cudaFree(observation_counts);
-        cudaFree(output_counts);
-        cudaFree(output_offsets);
+        cudaFree(density_counts);
+        cudaFree(density_offsets);
         return false;
     }
     cudaFree(gradient_sums_);
     cudaFree(absolute_gradient_sums_);
     cudaFree(observation_counts_);
-    cudaFree(output_counts_);
-    cudaFree(output_offsets_);
+    cudaFree(density_counts_);
+    cudaFree(density_offsets_);
     cudaFree(samples_);
     samples_ = samples;
     gradient_sums_ = gradient_sums;
     absolute_gradient_sums_ = absolute_gradient_sums;
     observation_counts_ = observation_counts;
-    output_counts_ = output_counts;
-    output_offsets_ = output_offsets;
+    density_counts_ = density_counts;
+    density_offsets_ = density_offsets;
     capacity_ = capacity;
     return true;
 }
@@ -450,21 +458,20 @@ bool DensityController::AccumulateStatistics(
 }
 
 bool DensityController::ControlDensity(
-    const float* parameters,
-    float*& output,
-    int*& parent_ids,
-    int input_stride,
-    int& output_stride,
-    double scene_extent,
-    double gradient_threshold,
-    double percent_dense,
-    double min_opacity,
-    double max_screen_size,
+    GaussianBuffers& gaussians,
+    float scene_extent,
+    float gradient_threshold,
+    float percent_dense,
+    float min_opacity,
+    float max_screen_size,
     unsigned long long seed,
     int* changes,
     float absolute_gradient_threshold) {
-    if (!control_ || (!parameters && input_stride > 0) || (parameters && parameters == output) || input_stride < 0 ||
-        input_stride != parameter_stride_ || output_stride < 0 || output_stride > INT_MAX / 6 ||
+    int gaussian_count = gaussians.gaussian_count_;
+    const float* parameters = gaussians.gaussians_;
+    if (!control_ || (!parameters && gaussian_count > 0) ||
+        (parameters && parameters == spare_gaussian_parameters_) || gaussian_count < 0 ||
+        gaussian_count != parameter_stride_ || spare_gaussian_stride_ < 0 || spare_gaussian_stride_ > INT_MAX / 6 ||
         !std::isfinite(scene_extent) || scene_extent < 0 || !std::isfinite(gradient_threshold) ||
         gradient_threshold < 0 || !std::isfinite(percent_dense) || percent_dense < 0 || !std::isfinite(min_opacity) ||
         min_opacity < 0 || min_opacity > 1 || !std::isfinite(max_screen_size) || max_screen_size < 0 ||
@@ -472,15 +479,15 @@ bool DensityController::ControlDensity(
         return false;
     }
     size_t scan_bytes = 0;
-    int4* counts = reinterpret_cast<int4*>(output_counts_);
-    int4* offsets = reinterpret_cast<int4*>(output_offsets_);
+    int4* counts = reinterpret_cast<int4*>(density_counts_);
+    int4* offsets = reinterpret_cast<int4*>(density_offsets_);
     if (cub::DeviceScan::ExclusiveScan(nullptr,
             scan_bytes,
             counts,
             offsets,
             AddDensityCounts{},
             make_int4(0, 0, 0, 0),
-            input_stride + 1) != cudaSuccess) {
+            gaussian_count + 1) != cudaSuccess) {
         return false;
     }
     if (scan_bytes > scan_storage_bytes_) {
@@ -492,17 +499,17 @@ bool DensityController::ControlDensity(
         scan_storage_ = storage;
         scan_storage_bytes_ = scan_bytes;
     }
-    CountDensityOutputsKernel<<<GetGridSize(input_stride + 1, kBlockSize), kBlockSize>>>(parameters,
+    CountDensityChangesKernel<<<GetGridSize(gaussian_count + 1, kBlockSize), kBlockSize>>>(parameters,
         gradient_sums_,
         absolute_gradient_sums_,
         observation_counts_,
         control_,
         counts,
-        input_stride,
-        static_cast<float>(gradient_threshold),
-        static_cast<float>(percent_dense * scene_extent),
-        static_cast<float>(min_opacity),
-        static_cast<float>(0.1 * scene_extent),
+        gaussian_count,
+        gradient_threshold,
+        percent_dense * scene_extent,
+        min_opacity,
+        0.1f * scene_extent,
         max_screen_size > 0,
         absolute_gradient_threshold);
     if (cub::DeviceScan::ExclusiveScan(scan_storage_,
@@ -511,10 +518,10 @@ bool DensityController::ControlDensity(
             offsets,
             AddDensityCounts{},
             make_int4(0, 0, 0, 0),
-            input_stride + 1) != cudaSuccess) {
+            gaussian_count + 1) != cudaSuccess) {
         return false;
     }
-    PrepareDensityOutputsKernel<<<1, 1>>>(offsets, control_, input_stride, random_blocks_);
+    PrepareDensityControlKernel<<<1, 1>>>(offsets, control_, gaussian_count, random_blocks_);
 
     int required = 0;
     if (changes) {
@@ -532,69 +539,72 @@ bool DensityController::ControlDensity(
         }
     }
     int next_stride = required;
-    if (!Reserve(std::max(input_stride, std::max(next_stride, output_stride)))) {
+    if (!Reserve(std::max(gaussian_count, std::max(next_stride, spare_gaussian_stride_)))) {
         return false;
     }
     if (required == 0) {
-        cudaFree(output);
-        cudaFree(parent_ids);
-        output = nullptr;
-        parent_ids = nullptr;
-        output_stride = 0;
+        cudaFree(spare_gaussian_parameters_);
+        cudaFree(history_parent_ids_);
+        spare_gaussian_parameters_ = nullptr;
+        history_parent_ids_ = nullptr;
+        spare_gaussian_stride_ = 0;
     }
-    else if (!output || next_stride > output_stride) {
+    else if (!spare_gaussian_parameters_ || next_stride > spare_gaussian_stride_) {
         float* replacement = nullptr;
         if (cudaMalloc(&replacement, sizeof(float) * kMaxParamCount * static_cast<size_t>(next_stride)) !=
             cudaSuccess) {
             return false;
         }
-        cudaFree(output);
-        output = replacement;
-        output_stride = next_stride;
+        cudaFree(spare_gaussian_parameters_);
+        spare_gaussian_parameters_ = replacement;
+        spare_gaussian_stride_ = next_stride;
     }
 
-    if (required > 0 && parent_ids) {
-        int* parents = nullptr;
-        if (cudaMalloc(&parents, static_cast<size_t>(required) * sizeof(int)) != cudaSuccess) {
+    if (required > 0) {
+        int* history_parent_ids = nullptr;
+        if (cudaMalloc(&history_parent_ids, static_cast<size_t>(required) * sizeof(int)) != cudaSuccess) {
             return false;
         }
-        cudaFree(parent_ids);
-        parent_ids = parents;
+        cudaFree(history_parent_ids_);
+        history_parent_ids_ = history_parent_ids;
     }
 
-    output_stride = next_stride;
+    spare_gaussian_stride_ = next_stride;
     if (seed != seed_) {
         if (cudaMemsetAsync(control_ + 8, 0, 2 * sizeof(unsigned long long)) != cudaSuccess) {
             return false;
         }
         seed_ = seed;
 
-        PrepareDensityOutputsKernel<<<1, 1>>>(reinterpret_cast<int4*>(output_offsets_),
+        PrepareDensityControlKernel<<<1, 1>>>(reinterpret_cast<int4*>(density_offsets_),
             control_,
-            input_stride,
+            gaussian_count,
             random_blocks_);
     }
     GenerateDensitySamplesKernel<<<random_blocks_, kBlockSize>>>(control_, samples_, random_blocks_, seed);
-    WriteDensityOutputsKernel<<<GetGridSize(input_stride, kBlockSize), kBlockSize>>>(parameters,
-        reinterpret_cast<int4*>(output_counts_),
-        reinterpret_cast<int4*>(output_offsets_),
+    WriteDensityGaussiansKernel<<<GetGridSize(gaussian_count, kBlockSize), kBlockSize>>>(parameters,
+        reinterpret_cast<int4*>(density_counts_),
+        reinterpret_cast<int4*>(density_offsets_),
         control_,
         samples_,
-        output,
-        parent_ids,
-        input_stride,
-        output_stride);
+        spare_gaussian_parameters_,
+        history_parent_ids_,
+        gaussian_count,
+        spare_gaussian_stride_);
     FinishDensityControlKernel<<<GetGridSize(capacity_, kBlockSize), kBlockSize>>>(gradient_sums_,
         absolute_gradient_sums_,
         observation_counts_,
-        reinterpret_cast<int4*>(output_counts_),
-        reinterpret_cast<int4*>(output_offsets_),
+        reinterpret_cast<int4*>(density_counts_),
+        reinterpret_cast<int4*>(density_offsets_),
         samples_,
         control_,
         capacity_);
     bool submitted = cudaGetLastError() == cudaSuccess;
     if (submitted) {
-        parameter_stride_ = output_stride;
+        parameter_stride_ = next_stride;
+        std::swap(gaussians.gaussians_, spare_gaussian_parameters_);
+        gaussians.gaussian_count_ = next_stride;
+        spare_gaussian_stride_ = gaussian_count;
     }
     return submitted;
 }
@@ -635,4 +645,4 @@ bool DensityController::ResetOpacity(
     return cudaGetLastError() == cudaSuccess;
 }
 
-}
+} // namespace gs_native

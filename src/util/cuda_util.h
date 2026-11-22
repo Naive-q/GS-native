@@ -14,4 +14,4 @@ inline int GetGridSize(
     return static_cast<int>(std::max<int64_t>((count + block_size - 1) / block_size, 1));
 }
 
-}
+} // namespace gs_native

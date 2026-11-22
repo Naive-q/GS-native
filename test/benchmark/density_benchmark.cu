@@ -5,46 +5,62 @@
 int main(int argc, char** argv) {
     using namespace gs_native;
     using namespace gs_native::benchmark;
-    float* output = nullptr;
-    int* parents = nullptr;
+    GaussianBuffers gaussians;
     try {
         Options options;
         if (!ReadOptions(argv, options, argc)) return 0;
-        auto gaussians = MakeGaussians(options.count_);
+        auto initial_gaussians = MakeGaussians(options.count_);
         std::vector<float> statistics(size_t(options.count_) * 2, 1);
         int expected = 0;
         for (int i = 0; i < options.count_; ++i) {
             statistics[i] = i % 2 ? 0 : 1;
-            if (i % 7 == 0) gaussians[i].opacity_logit_ = -12;
+            if (i % 7 == 0) initial_gaussians[i].opacity_logit_ = -12;
             else expected += i % 2 ? 1 : 2;
         }
-        DeviceGaussians device(gaussians);
+        DeviceGaussians device(initial_gaussians);
         DeviceBuffer<float> stats(statistics);
         DensityController controller;
-        int stride = 0;
-        CheckCuda(cudaMalloc(&parents, sizeof(int)));
         auto prepare = [&] {
+            if (!gaussians.gaussians_ || gaussians.gaussian_count_ != options.count_) {
+                CheckCuda(cudaFree(gaussians.gaussians_));
+                gaussians.gaussians_ = nullptr;
+                CheckCuda(cudaMalloc(&gaussians.gaussians_,
+                    static_cast<size_t>(options.count_) * kMaxParamCount * sizeof(float)));
+            }
+            gaussians.gaussian_count_ = options.count_;
+            CheckCuda(cudaMemcpy(gaussians.gaussians_, device.buffers_.gaussians_,
+                static_cast<size_t>(options.count_) * kMaxParamCount * sizeof(float), cudaMemcpyDeviceToDevice));
             if (!controller.Initialize(options.count_, options.count_) ||
                 !controller.AccumulateStatistics(stats.Get(), stats.Get(), options.count_)) throw std::runtime_error("Density setup failed");
         };
-        auto control = [&] { return controller.ControlDensity(device.buffers_.gaussians_, output, parents,
-            options.count_, stride, 1, 0.0002, 0.01, 0.005, 0, 42, nullptr, 0.0008f); };
+        auto control = [&] {
+            return controller.ControlDensity(
+                gaussians,
+                1.0f,
+                0.0002f,
+                0.01f,
+                0.005f,
+                0.0f,
+                42,
+                nullptr,
+                0.0008f);
+        };
         prepare();
         if (!control()) throw std::runtime_error("Density validation failed");
-        if (stride != expected || ReadDevice(controller.GetGaussianCount(), 1)[0] != expected) {
+        if (gaussians.gaussian_count_ != expected || ReadDevice(controller.GetGaussianCount(), 1)[0] != expected) {
             throw std::runtime_error("Density count mismatch");
         }
-        CheckFinite(ReadDevice(output, size_t(stride) * kMaxParamCount));
+        CheckFinite(ReadDevice(gaussians.gaussians_, size_t(gaussians.gaussian_count_) * kMaxParamCount));
         std::cout << "scope=ControlDensity_scan_sampling_output count=" << options.count_ << '\n';
         Measure("density", options, prepare, control);
-        if (stride != expected || ReadDevice(controller.GetGaussianCount(), 1)[0] != expected) {
+        if (gaussians.gaussian_count_ != expected || ReadDevice(controller.GetGaussianCount(), 1)[0] != expected) {
             throw std::runtime_error("Density count mismatch");
         }
-        CheckFinite(ReadDevice(output, size_t(stride) * kMaxParamCount));
+        CheckFinite(ReadDevice(gaussians.gaussians_, size_t(gaussians.gaussian_count_) * kMaxParamCount));
     }
     catch (const std::exception& error) {
-        cudaFree(output); cudaFree(parents);
+        cudaFree(gaussians.gaussians_);
         std::cerr << error.what() << '\n'; return 1;
     }
-    cudaFree(output); cudaFree(parents);
+    cudaFree(gaussians.gaussians_);
 }

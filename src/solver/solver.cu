@@ -705,7 +705,7 @@ __global__ void UpdateGaussiansKernel(
         (sqrtf(second * second_correction) + 1e-15f);
 }
 
-}
+} // namespace
 
 Solver::~Solver() {
     cudaFree(image_gradients_);
@@ -927,4 +927,4 @@ bool Solver::UpdateGaussians(
     return true;
 }
 
-}
+} // namespace gs_native

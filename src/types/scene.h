@@ -15,6 +15,6 @@ struct Scene {
     std::vector<cv::Mat> train_images_;
     std::vector<cv::Mat> test_images_;
     PointCloud point_cloud_;
-};
+}; // struct Scene
 
-}
+} // namespace gs_native
