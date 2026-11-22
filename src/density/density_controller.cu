@@ -257,14 +257,17 @@ __global__ void FinishDensityControlKernel(
         absolute_gradient_sums[id] = 0;
         observation_counts[id] = 0;
     }
-    if (id < control[7]) {
-        int4 counts = density_counts[id], offsets = density_offsets[id];
+    if (id < __ldg(control + 7)) {
+        int4 counts = __ldg(density_counts + id), offsets = __ldg(density_offsets + id);
+        int survivor_count = __ldg(control + 4);
+        int clone_count = __ldg(control + 5);
+        int split_count = __ldg(control + 6);
         bool split = counts.w != 0;
         int count = split ? 2 : counts.x + counts.y;
         for (int child = 0; child < count; ++child) {
             int destination = split ?
-                control[4] + control[5] + child * control[6] + offsets.w :
-                (child == 0 && counts.x ? offsets.x : control[4] + offsets.y);
+                survivor_count + clone_count + child * split_count + offsets.w :
+                (child == 0 && counts.x ? offsets.x : survivor_count + offsets.y);
             samples[destination] = counts.y || counts.z ? 1.0f : 0.0f;
             reinterpret_cast<int*>(samples + capacity)[destination] = id;
         }
