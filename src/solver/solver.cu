@@ -322,7 +322,7 @@ __device__ void ComputeEquationSh(
     }
 }
 
-__global__ void ComputeSplatGradientsKernel(
+__global__ __launch_bounds__(256, 5) void ComputeSplatGradientsKernel(
     const int* ids,
     const int64_t* offsets,
     const float2* means,
@@ -338,6 +338,7 @@ __global__ void ComputeSplatGradientsKernel(
     __shared__ float2 shared_means[256];
     __shared__ float4 shared_conics[256];
     __shared__ float3 shared_colors[256];
+    __shared__ float4 warp_sums[8][3];
     int t = threadIdx.x;
     int tile = blockIdx.x;
     int x = tile % camera.tile_count_x_ * 16 + t % 16;
@@ -439,40 +440,19 @@ __global__ void ComputeSplatGradientsKernel(
                     value_7 += __shfl_down_sync(0xffffffffu, value_7, stride);
                     value_8 += __shfl_down_sync(0xffffffffu, value_8, stride);
                 }
-                float broadcast_0 = __shfl_sync(0xffffffffu, value_0, 0);
-                float broadcast_1 = __shfl_sync(0xffffffffu, value_1, 0);
-                float broadcast_9 = __shfl_sync(0xffffffffu, value_9, 0);
-                float broadcast_10 = __shfl_sync(0xffffffffu, value_10, 0);
-                float broadcast_2 = __shfl_sync(0xffffffffu, value_2, 0);
-                float broadcast_3 = __shfl_sync(0xffffffffu, value_3, 0);
-                float broadcast_4 = __shfl_sync(0xffffffffu, value_4, 0);
-                float broadcast_5 = __shfl_sync(0xffffffffu, value_5, 0);
-                float broadcast_6 = __shfl_sync(0xffffffffu, value_6, 0);
-                float broadcast_7 = __shfl_sync(0xffffffffu, value_7, 0);
-                float broadcast_8 = __shfl_sync(0xffffffffu, value_8, 0);
-                if (t % 32 < 11) {
-                    int lane = t % 32;
-                    float value = lane == 0 ?
-                        broadcast_0 :
-                        lane == 1 ?
-                        broadcast_1 :
-                        lane == 2 ?
-                        broadcast_2 :
-                        lane == 3 ?
-                        broadcast_3 :
-                        lane == 4 ?
-                        broadcast_4 :
-                        lane == 5 ?
-                        broadcast_5 :
-                        lane == 6 ?
-                        broadcast_6 :
-                        lane == 7 ?
-                        broadcast_7 :
-                        lane == 8 ?
-                        broadcast_8 :
-                        lane == 9 ?
-                        broadcast_9 :
-                        broadcast_10;
+                if (t % 32 == 0) {
+                    warp_sums[t / 32][0] = make_float4(value_0, value_1, value_2, value_3);
+                    warp_sums[t / 32][1] = make_float4(value_4, value_5, value_6, value_7);
+                    warp_sums[t / 32][2] = make_float4(value_8, value_9, value_10, 0.0f);
+                }
+                __syncwarp();
+                int lane = t % 32;
+                float value = 0.0f;
+                if (lane < 11) {
+                    value = reinterpret_cast<float*>(warp_sums)[(t / 32) * 12 + lane];
+                }
+                __syncwarp();
+                if (lane < 11) {
                     int field = lane < 9 ? lane : lane - 9;
                     float* output = lane < 9 ? gradients : absolute_statistics;
                     if (value != 0.0f) {
@@ -499,11 +479,14 @@ __global__ void CollectProjectionStatisticsKernel(
     }
     float x = gradients[id] * (0.5f * width);
     float y = gradients[count + id] * (0.5f * height);
-    statistics[id] = sqrtf(x * x + y * y);
     float absolute_x = absolute_statistics[id] * (0.5f * width);
     float absolute_y = absolute_statistics[count + id] * (0.5f * height);
-    absolute_statistics[id] = sqrtf(absolute_x * absolute_x + absolute_y * absolute_y);
-    statistics[count + id] = record_offsets[id + 1] > record_offsets[id] ? 1.0f : 0.0f;
+    float observed = record_offsets[id + 1] > record_offsets[id] ? 1.0f : 0.0f;
+    float signed_length = sqrtf(x * x + y * y);
+    float absolute_length = sqrtf(absolute_x * absolute_x + absolute_y * absolute_y);
+    statistics[id] = signed_length;
+    absolute_statistics[id] = absolute_length;
+    statistics[count + id] = observed;
 }
 
 template<int Degree>

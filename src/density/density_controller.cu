@@ -252,12 +252,10 @@ __global__ void FinishDensityControlKernel(
     int* control,
     int capacity) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
-    if (id < capacity) {
+    if (id < __ldg(control + 7)) {
         gradient_sums[id] = 0;
         absolute_gradient_sums[id] = 0;
         observation_counts[id] = 0;
-    }
-    if (id < __ldg(control + 7)) {
         int4 counts = __ldg(density_counts + id), offsets = __ldg(density_offsets + id);
         int survivor_count = __ldg(control + 4);
         int clone_count = __ldg(control + 5);
@@ -594,7 +592,7 @@ bool DensityController::ControlDensity(
         history_parent_ids_,
         gaussian_count,
         spare_gaussian_stride_);
-    FinishDensityControlKernel<<<GetGridSize(capacity_, kBlockSize), kBlockSize>>>(gradient_sums_,
+    FinishDensityControlKernel<<<GetGridSize(gaussian_count, kBlockSize), kBlockSize>>>(gradient_sums_,
         absolute_gradient_sums_,
         observation_counts_,
         reinterpret_cast<int4*>(density_counts_),
