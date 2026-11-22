@@ -43,10 +43,6 @@ private:
     uint8_t* target_ = nullptr;
     size_t pixel_capacity_ = 0;
 
-    float* density_output_ = nullptr;
-    int* parent_ids_ = nullptr;
-    int density_output_stride_ = 0;
-
     std::vector<int> camera_order_;
     int camera_cursor_ = 0;
 
