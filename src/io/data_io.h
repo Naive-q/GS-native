@@ -1,7 +1,7 @@
 #pragma once
 
-#include "types/gaussian.h"
-#include "types/scene.h"
+#include "core/types/gaussian.h"
+#include "core/types/scene.h"
 
 #include <string>
 #include <vector>

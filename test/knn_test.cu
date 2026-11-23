@@ -1,6 +1,6 @@
 #include "gpu_test.h"
 
-#include "knn/knn.h"
+#include "core/knn/knn.h"
 
 namespace gs_native::test {
 using KnnTest = GpuTest;

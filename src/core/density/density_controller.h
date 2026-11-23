@@ -1,6 +1,6 @@
 #pragma once
 
-#include "types/buffers.h"
+#include "core/types/buffers.h"
 
 #include <cstddef>
 
@@ -25,11 +25,13 @@ public:
 
     bool AccumulateStatistics(
         const float* statistics,
+        const float* absolute_statistics,
         int gaussian_count);
 
     bool ResetOpacity(
         float* parameters,
-        int stride);
+        int stride,
+        float max_opacity = 0.01f);
 
     bool ControlDensity(
         GaussianBuffers& gaussians,
@@ -39,7 +41,8 @@ public:
         float min_opacity = 0.005f,
         float max_screen_size = 0.0f,
         unsigned long long seed = 0,
-        int* changes = nullptr);
+        int* changes = nullptr,
+        float absolute_gradient_threshold = 0.0f);
 
     const int* GetHistoryParentIds() const {
         return history_parent_ids_;
@@ -65,6 +68,7 @@ private:
     int spare_gaussian_stride_ = 0;
 
     float* gradient_sums_ = nullptr;
+    float* absolute_gradient_sums_ = nullptr;
     float* samples_ = nullptr;
     unsigned int* observation_counts_ = nullptr;
     int* density_counts_ = nullptr;

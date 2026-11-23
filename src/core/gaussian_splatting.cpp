@@ -1,6 +1,6 @@
-#include "gaussian_splatting.h"
+#include "core/gaussian_splatting.h"
 
-#include "knn/knn.h"
+#include "core/knn/knn.h"
 #include "io/data_io.h"
 #include "util/log.h"
 
@@ -133,7 +133,7 @@ bool GaussianSplatting::Train(int iterations) {
     }
     GS_NATIVE_INFO("Training started: requested iterations {}, completed {}, gaussians {}.",
         iterations, completed_, gaussians_.gaussian_count_);
-    std::mt19937 generator(std::random_device{}());
+    std::mt19937 generator(0);
     for (int iteration = 0; iteration < iterations; ++iteration) {
         if (gaussians_.gaussian_count_ == 0) {
             return false;
@@ -183,18 +183,21 @@ bool GaussianSplatting::Train(int iterations) {
         completed_ = next;
         ++camera_cursor_;
         if (completed_ < 15000) {
-            if (!density_.AccumulateStatistics(solver_.GetProjectionStatistics(), gaussians_.gaussian_count_)) {
+            if (!density_.AccumulateStatistics(solver_.GetProjectionStatistics(),
+                    solver_.GetAbsoluteProjectionStatistics(), gaussians_.gaussian_count_)) {
                 return false;
             }
             if (completed_ > 500 && completed_ % 100 == 0 && !ControlDensity()) {
                 return false;
             }
-            if (completed_ % 3000 == 0) {
-                if (!density_.ResetOpacity(gaussians_.gaussians_, gaussians_.gaussian_count_) ||
+            if (completed_ % 500 == 0) {
+                float max_opacity = completed_ % 3000 == 0 ? 0.01f : 0.8f;
+                if (!density_.ResetOpacity(gaussians_.gaussians_, gaussians_.gaussian_count_, max_opacity) ||
                     !solver_.ResetOpacityHistory()) {
                     return false;
                 }
-                GS_NATIVE_INFO("Iteration {}: opacity reset, gaussians {}.", completed_, gaussians_.gaussian_count_);
+                GS_NATIVE_INFO("Iteration {}: opacity capped at {}, gaussians {}.",
+                    completed_, max_opacity, gaussians_.gaussian_count_);
             }
         }
         GS_NATIVE_INFO("Iteration {}/{}, completed {}, SH {}, gaussians {}.",
@@ -299,7 +302,8 @@ bool GaussianSplatting::ControlDensity() {
             0.005f,
             completed_ > 3000 ? 20.0f : 0.0f,
             0,
-            changes)) {
+            changes,
+            0.0008f)) {
         GS_NATIVE_ERROR("Iteration {}: density control failed.", completed_);
         return false;
     }

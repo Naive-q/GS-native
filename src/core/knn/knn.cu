@@ -1,4 +1,4 @@
-#include "knn/knn.h"
+#include "core/knn/knn.h"
 
 #include "util/log.h"
 

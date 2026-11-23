@@ -1,6 +1,6 @@
 #include "gpu_test.h"
 
-#include "density/density_controller.h"
+#include "core/density/density_controller.h"
 
 namespace gs_native::test {
 using DensityTest = GpuTest;
@@ -16,7 +16,8 @@ struct DensityResult {
         const float* parameters,
         int gaussian_count,
         float threshold = 0.15f,
-        float max_screen_size = 0.0f) {
+        float max_screen_size = 0.0f,
+        float absolute_gradient_threshold = 0.0f) {
         GaussianBuffers gaussians;
         gaussians.gaussian_count_ = gaussian_count;
         if (gaussian_count > 0) {
@@ -36,7 +37,8 @@ struct DensityResult {
             0.005f,
             max_screen_size,
             42,
-            changes_);
+            changes_,
+            absolute_gradient_threshold);
         cudaFree(parameters_);
         parameters_ = gaussians.gaussians_;
         count_ = gaussians.gaussian_count_;
@@ -100,8 +102,8 @@ TEST_F(DensityTest, SplitsReproduciblyAndRescalesChildren) {
     DensityController first_controller, second_controller;
     ASSERT_TRUE(first_controller.Initialize(1, 1));
     ASSERT_TRUE(second_controller.Initialize(1, 1));
-    ASSERT_TRUE(first_controller.AccumulateStatistics(statistics.Get(), 1));
-    ASSERT_TRUE(second_controller.AccumulateStatistics(statistics.Get(), 1));
+    ASSERT_TRUE(first_controller.AccumulateStatistics(statistics.Get(), statistics.Get(), 1));
+    ASSERT_TRUE(second_controller.AccumulateStatistics(statistics.Get(), statistics.Get(), 1));
     DensityResult first, second;
     ASSERT_TRUE(first.Apply(first_controller, original_gaussians.buffers_.gaussians_, 1));
     ASSERT_TRUE(second.Apply(second_controller, original_gaussians.buffers_.gaussians_, 1));
@@ -137,8 +139,8 @@ TEST_F(DensityTest, AveragesRoundStatisticsBeforeSelecting) {
         SCOPED_TRACE(::testing::Message() << "threshold=" << threshold);
         DensityController controller;
         ASSERT_TRUE(controller.Initialize(1, 1));
-        ASSERT_TRUE(controller.AccumulateStatistics(first.Get(), 1));
-        ASSERT_TRUE(controller.AccumulateStatistics(second.Get(), 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(first.Get(), first.Get(), 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(second.Get(), second.Get(), 1));
         DensityResult density_result;
         ASSERT_TRUE(density_result.Apply(controller, original_gaussians.buffers_.gaussians_, 1, threshold));
         EXPECT_EQ(density_result.count_, threshold < 0.2 ? 2 : 1);
@@ -161,18 +163,32 @@ TEST_F(DensityTest, PrunesOversizedGaussiansWhenEnabled) {
 }
 
 TEST_F(DensityTest, ResetsOpacityWithoutChangingOtherFields) {
-    auto gaussians = MakeGaussians(3);
-    gaussians[1].opacity_logit_ = -9;
-    gaussians[2].opacity_logit_ = std::log(0.01f / 0.99f);
-    DeviceGaussians original_gaussians(gaussians);
-    DensityController controller;
-    ASSERT_TRUE(controller.Initialize(3, 3));
-    ASSERT_TRUE(controller.ResetOpacity(original_gaussians.buffers_.gaussians_, 3));
-    auto actual = original_gaussians.parameters_.Download(), original = PackGaussians(gaussians);
-    for (int field = 0; field < kMaxParamCount; ++field) {
-        for (int i = 0; i < 3; ++i) {
-            float expected = field == kOpacityIndex ? std::min(original[field * 3 + i], std::log(0.01f / 0.99f)) : original[field * 3 + i];
-            EXPECT_FLOAT_EQ(actual[field * 3 + i], expected);
+    auto gaussians = MakeGaussians(4);
+    gaussians[0].opacity_logit_ = std::log(0.95f / 0.05f);
+    gaussians[1].opacity_logit_ = std::log(0.2f / 0.8f);
+    gaussians[2].opacity_logit_ = std::log(0.8f / 0.2f);
+    gaussians[3].opacity_logit_ = -9;
+    auto original = PackGaussians(gaussians);
+    for (float max_opacity : {0.8f, 0.01f}) {
+        SCOPED_TRACE(::testing::Message() << "max_opacity=" << max_opacity);
+        DeviceGaussians original_gaussians(gaussians);
+        DensityController controller;
+        ASSERT_TRUE(controller.Initialize(4, 4));
+        if (max_opacity == 0.01f) {
+            ASSERT_TRUE(controller.ResetOpacity(original_gaussians.buffers_.gaussians_, 4));
+        }
+        else {
+            ASSERT_TRUE(controller.ResetOpacity(original_gaussians.buffers_.gaussians_, 4, max_opacity));
+        }
+        auto actual = original_gaussians.parameters_.Download();
+        float limit = std::log(max_opacity / (1.0f - max_opacity));
+        for (int field = 0; field < kMaxParamCount; ++field) {
+            for (int i = 0; i < 4; ++i) {
+                float expected = field == kOpacityIndex ?
+                    std::min(original[field * 4 + i], limit) :
+                    original[field * 4 + i];
+                EXPECT_FLOAT_EQ(actual[field * 4 + i], expected);
+            }
         }
     }
 }
@@ -191,4 +207,50 @@ TEST_F(DensityTest, SupportsAllPrunedAndEmptyInput) {
     ASSERT_TRUE(empty.Apply(controller, nullptr, 0));
     EXPECT_EQ(empty.count_, 0);
 }
+TEST_F(DensityTest, UsesSignedGradientsForClonesAndAbsoluteGradientsForSplits) {
+    auto gaussians = MakeGaussians(6);
+    for (int id = 0; id < 6; ++id) {
+        gaussians[id].log_scale_.setConstant(std::log(id < 2 ? 0.005f : 0.02f));
+    }
+    gaussians[5].log_scale_.setConstant(std::log(0.01f));
+    DeviceGaussians original_gaussians(gaussians);
+    DeviceBuffer<float> statistics(std::vector<float>{
+        0.0003f, 0.0001f, 0.0003f, 0.0001f, 0.0003f, 0.0003f, 1, 1, 1, 1, 1, 1});
+    DeviceBuffer<float> absolute_statistics(std::vector<float>{
+        0.001f, 0.001f, 0.0007f, 0.001f, 0.001f, 0.0007f});
+    DensityController controller;
+    ASSERT_TRUE(controller.Initialize(6, 6));
+    ASSERT_TRUE(controller.AccumulateStatistics(statistics.Get(), absolute_statistics.Get(), 6));
+    DensityResult density_result;
+    ASSERT_TRUE(density_result.Apply(controller, original_gaussians.buffers_.gaussians_, 6,
+        0.0002f, 0.0f, 0.0008f));
+    ASSERT_EQ(density_result.count_, 10);
+    EXPECT_EQ(ReadDevice(controller.GetParentIds(), 10), (std::vector<int>{0, 1, 2, 5, 0, 5, 3, 4, 3, 4}));
+    EXPECT_EQ(ReadDevice(density_result.parents_, 10), (std::vector<int>{0, 1, 2, 5, -1, -1, -1, -1, -1, -1}));
+    DensityResult next;
+    ASSERT_TRUE(next.Apply(controller, density_result.parameters_, 10,
+        0.0002f, 0.0f, 0.0008f));
+    EXPECT_EQ(next.count_, 10);
+    EXPECT_EQ(next.changes_[0], 0);
+}
+
+TEST_F(DensityTest, AveragesAbsoluteStatisticsWithSharedObservationCounts) {
+    auto gaussians = MakeGaussians(1);
+    gaussians[0].log_scale_.setConstant(std::log(0.02f));
+    DeviceGaussians original_gaussians(gaussians);
+    DeviceBuffer<float> statistics(std::vector<float>{0.0f, 1.0f});
+    DeviceBuffer<float> first(std::vector<float>{0.0007f});
+    DeviceBuffer<float> second(std::vector<float>{0.001f});
+    for (float threshold : {0.00084f, 0.00086f}) {
+        DensityController controller;
+        ASSERT_TRUE(controller.Initialize(1, 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(statistics.Get(), first.Get(), 1));
+        ASSERT_TRUE(controller.AccumulateStatistics(statistics.Get(), second.Get(), 1));
+        DensityResult density_result;
+        ASSERT_TRUE(density_result.Apply(controller, original_gaussians.buffers_.gaussians_, 1,
+            0.0002f, 0.0f, threshold));
+        EXPECT_EQ(density_result.count_, threshold < 0.00085f ? 2 : 1);
+    }
+}
+
 } // namespace gs_native::test

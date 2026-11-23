@@ -1,7 +1,7 @@
 #include "gpu_test.h"
 
 #include "cpu_reference.h"
-#include "gaussian_splatting.h"
+#include "core/gaussian_splatting.h"
 #include "io/data_io.h"
 
 namespace gs_native::test {

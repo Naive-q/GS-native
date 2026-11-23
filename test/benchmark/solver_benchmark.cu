@@ -1,7 +1,7 @@
 #include "benchmark_support.h"
 
-#include "render/renderer.h"
-#include "solver/solver.h"
+#include "core/render/renderer.h"
+#include "core/solver/solver.h"
 
 int main(int argc, char** argv) {
     using namespace gs_native;

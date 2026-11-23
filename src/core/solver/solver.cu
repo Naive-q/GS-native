@@ -1,6 +1,6 @@
-#include "solver/solver.h"
+#include "core/solver/solver.h"
 
-#include "render/renderer.h"
+#include "core/render/renderer.h"
 
 #include <cuda_runtime.h>
 
@@ -322,7 +322,7 @@ __device__ void ComputeEquationSh(
     }
 }
 
-__global__ void ComputeSplatGradientsKernel(
+__global__ __launch_bounds__(256, 5) void ComputeSplatGradientsKernel(
     const int* ids,
     const int64_t* offsets,
     const float2* means,
@@ -332,11 +332,13 @@ __global__ void ComputeSplatGradientsKernel(
     const float* image_gradients,
     CameraParams camera,
     float* gradients,
+    float* absolute_statistics,
     int count) {
     __shared__ int shared_ids[256];
     __shared__ float2 shared_means[256];
     __shared__ float4 shared_conics[256];
     __shared__ float3 shared_colors[256];
+    __shared__ float4 warp_sums[8][3];
     int t = threadIdx.x;
     int tile = blockIdx.x;
     int x = tile % camera.tile_count_x_ * 16 + t % 16;
@@ -414,15 +416,47 @@ __global__ void ComputeSplatGradientsKernel(
             }
 
             if (__any_sync(0xffffffffu, has_contribution)) {
+                float value_0 = contribution[0];
+                float value_1 = contribution[1];
+                float value_9 = fabsf(contribution[0]);
+                float value_10 = fabsf(contribution[1]);
+                float value_2 = contribution[2];
+                float value_3 = contribution[3];
+                float value_4 = contribution[4];
+                float value_5 = contribution[5];
+                float value_6 = contribution[6];
+                float value_7 = contribution[7];
+                float value_8 = contribution[8];
                 for (int stride = 16; stride > 0; stride /= 2) {
-                    for (int field = 0; field < 9; ++field) {
-                        contribution[field] += __shfl_down_sync(0xffffffffu, contribution[field], stride);
-                    }
+                    value_0 += __shfl_down_sync(0xffffffffu, value_0, stride);
+                    value_1 += __shfl_down_sync(0xffffffffu, value_1, stride);
+                    value_9 += __shfl_down_sync(0xffffffffu, value_9, stride);
+                    value_10 += __shfl_down_sync(0xffffffffu, value_10, stride);
+                    value_2 += __shfl_down_sync(0xffffffffu, value_2, stride);
+                    value_3 += __shfl_down_sync(0xffffffffu, value_3, stride);
+                    value_4 += __shfl_down_sync(0xffffffffu, value_4, stride);
+                    value_5 += __shfl_down_sync(0xffffffffu, value_5, stride);
+                    value_6 += __shfl_down_sync(0xffffffffu, value_6, stride);
+                    value_7 += __shfl_down_sync(0xffffffffu, value_7, stride);
+                    value_8 += __shfl_down_sync(0xffffffffu, value_8, stride);
                 }
-                for (int field = 0; field < 9; ++field) {
-                    float sum = contribution[field];
-                    if (t % 32 == 0 && sum != 0.0f) {
-                        atomicAdd(gradients + static_cast<int64_t>(field) * count + shared_ids[j], sum);
+                if (t % 32 == 0) {
+                    warp_sums[t / 32][0] = make_float4(value_0, value_1, value_2, value_3);
+                    warp_sums[t / 32][1] = make_float4(value_4, value_5, value_6, value_7);
+                    warp_sums[t / 32][2] = make_float4(value_8, value_9, value_10, 0.0f);
+                }
+                __syncwarp();
+                int lane = t % 32;
+                float value = 0.0f;
+                if (lane < 11) {
+                    value = reinterpret_cast<float*>(warp_sums)[(t / 32) * 12 + lane];
+                }
+                __syncwarp();
+                if (lane < 11) {
+                    int field = lane < 9 ? lane : lane - 9;
+                    float* output = lane < 9 ? gradients : absolute_statistics;
+                    if (value != 0.0f) {
+                        atomicAdd(output + static_cast<int64_t>(field) * count + shared_ids[j], value);
                     }
                 }
             }
@@ -435,6 +469,7 @@ __global__ void CollectProjectionStatisticsKernel(
     const float* gradients,
     const int* record_offsets,
     float* statistics,
+    float* absolute_statistics,
     int count,
     int width,
     int height) {
@@ -444,8 +479,14 @@ __global__ void CollectProjectionStatisticsKernel(
     }
     float x = gradients[id] * (0.5f * width);
     float y = gradients[count + id] * (0.5f * height);
-    statistics[id] = sqrtf(x * x + y * y);
-    statistics[count + id] = record_offsets[id + 1] > record_offsets[id] ? 1.0f : 0.0f;
+    float absolute_x = absolute_statistics[id] * (0.5f * width);
+    float absolute_y = absolute_statistics[count + id] * (0.5f * height);
+    float observed = record_offsets[id + 1] > record_offsets[id] ? 1.0f : 0.0f;
+    float signed_length = sqrtf(x * x + y * y);
+    float absolute_length = sqrtf(absolute_x * absolute_x + absolute_y * absolute_y);
+    statistics[id] = signed_length;
+    absolute_statistics[id] = absolute_length;
+    statistics[count + id] = observed;
 }
 
 template<int Degree>
@@ -652,6 +693,7 @@ __global__ void UpdateGaussiansKernel(
 Solver::~Solver() {
     cudaFree(image_gradients_);
     cudaFree(projection_statistics_);
+    cudaFree(absolute_projection_statistics_);
     cudaFree(gaussian_gradients_);
     cudaFree(first_moments_);
     cudaFree(second_moments_);
@@ -722,21 +764,31 @@ bool Solver::RemapGaussians(
     if (gaussian_count < 0) {
         return false;
     }
-    float* statistics = nullptr;
-    float* gradients = nullptr;
+    float* statistics = gaussian_count > 0 && gaussian_count <= gaussian_capacity_ ?
+        projection_statistics_ :
+        nullptr;
+    float* absolute_statistics = gaussian_count > 0 && gaussian_count <= gaussian_capacity_ ?
+        absolute_projection_statistics_ :
+        nullptr;
+    float* gradients = gaussian_count > 0 && gaussian_count <= gaussian_capacity_ ?
+        gaussian_gradients_ :
+        nullptr;
     float* first = nullptr;
     float* second = nullptr;
     if (gaussian_count > 0) {
         size_t bytes = static_cast<size_t>(gaussian_count) * kMaxParamCount * sizeof(float);
-        cudaError_t result = cudaMalloc(&gradients, bytes);
+        cudaError_t result = gradients ? cudaSuccess : cudaMalloc(&gradients, bytes);
         if (result == cudaSuccess) {
             result = cudaMalloc(&first, bytes);
         }
         if (result == cudaSuccess) {
             result = cudaMalloc(&second, bytes);
         }
-        if (result == cudaSuccess) {
+        if (result == cudaSuccess && !statistics) {
             result = cudaMalloc(&statistics, static_cast<size_t>(gaussian_count) * 2 * sizeof(float));
+        }
+        if (result == cudaSuccess && !absolute_statistics) {
+            result = cudaMalloc(&absolute_statistics, static_cast<size_t>(gaussian_count) * 2 * sizeof(float));
         }
         if (result == cudaSuccess) {
             dim3 grid((gaussian_count + 255) / 256, kMaxParamCount);
@@ -748,18 +800,33 @@ bool Solver::RemapGaussians(
             }
         }
         if (result != cudaSuccess) {
-            cudaFree(statistics);
-            cudaFree(gradients);
+            if (statistics != projection_statistics_) {
+                cudaFree(statistics);
+            }
+            if (absolute_statistics != absolute_projection_statistics_) {
+                cudaFree(absolute_statistics);
+            }
+            if (gradients != gaussian_gradients_) {
+                cudaFree(gradients);
+            }
             cudaFree(first);
             cudaFree(second);
             return false;
         }
     }
-    cudaFree(projection_statistics_);
-    cudaFree(gaussian_gradients_);
+    if (statistics != projection_statistics_) {
+        cudaFree(projection_statistics_);
+    }
+    if (absolute_statistics != absolute_projection_statistics_) {
+        cudaFree(absolute_projection_statistics_);
+    }
+    if (gradients != gaussian_gradients_) {
+        cudaFree(gaussian_gradients_);
+    }
     cudaFree(first_moments_);
     cudaFree(second_moments_);
     projection_statistics_ = statistics;
+    absolute_projection_statistics_ = absolute_statistics;
     gaussian_gradients_ = gradients;
     first_moments_ = first;
     second_moments_ = second;
@@ -793,7 +860,9 @@ bool Solver::ComputeGaussianGradients(
         }
     }
     if (cudaMemsetAsync(gaussian_gradients_, 0,
-            static_cast<size_t>(count) * kMaxParamCount * sizeof(float)) != cudaSuccess) {
+            static_cast<size_t>(count) * kMaxParamCount * sizeof(float)) != cudaSuccess ||
+        cudaMemsetAsync(absolute_projection_statistics_, 0,
+            static_cast<size_t>(count) * 2 * sizeof(float)) != cudaSuccess) {
         return false;
     }
     ComputeSplatGradientsKernel<<<static_cast<unsigned int>(tiles), 256>>>(renderer.GetTileGaussianIds(),
@@ -805,9 +874,10 @@ bool Solver::ComputeGaussianGradients(
         image_gradients_,
         camera,
         gaussian_gradients_,
+        absolute_projection_statistics_,
         count);
     CollectProjectionStatisticsKernel<<<static_cast<unsigned int>((count + 255ll) / 256), 256>>>(
-        gaussian_gradients_, renderer.GetRecordOffsets(), projection_statistics_,
+        gaussian_gradients_, renderer.GetRecordOffsets(), projection_statistics_, absolute_projection_statistics_,
         count, camera.width_, camera.height_);
     sh_degree = std::clamp(sh_degree, 0, 3);
     int grid = static_cast<int>((count + 255ll) / 256);

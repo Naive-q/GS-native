@@ -1,6 +1,6 @@
-#include "density/density_controller.h"
+#include "core/density/density_controller.h"
 
-#include "types/buffers.h"
+#include "core/types/buffers.h"
 #include "util/cuda_util.h"
 
 #include <cub/cub.cuh>
@@ -60,6 +60,7 @@ __global__ void AccumulateDensityStatisticsKernel(
 __global__ void CountDensityChangesKernel(
     const float* parameters,
     const float* gradient_sums,
+    const float* absolute_gradient_sums,
     const unsigned int* observation_counts,
     const int* control,
     int4* density_counts,
@@ -68,7 +69,8 @@ __global__ void CountDensityChangesKernel(
     float split_threshold,
     float min_opacity,
     float max_world_size,
-    bool prune_large) {
+    bool prune_large,
+    float absolute_gradient_threshold) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id > gaussian_count) {
         return;
@@ -77,6 +79,7 @@ __global__ void CountDensityChangesKernel(
         density_counts[id] = make_int4(0, 0, 0, 0);
         return;
     }
+    float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * gaussian_count + id]));
     float gradient = observation_counts[id] ? gradient_sums[id] / observation_counts[id] : 0;
     if (isnan(gradient)) {
         gradient = 0;
@@ -91,11 +94,14 @@ __global__ void CountDensityChangesKernel(
     }
     bool selected = gradient >= gradient_threshold;
     bool clone = selected && max_scale <= split_threshold;
-    bool split = selected && max_scale > split_threshold;
-    float opacity = 1.0f / (1.0f + expf(-parameters[static_cast<int64_t>(kOpacityIndex) * gaussian_count + id]));
+    float absolute_gradient = observation_counts[id] ? absolute_gradient_sums[id] / observation_counts[id] : 0;
+    bool split_selected = absolute_gradient_threshold > 0.0f ?
+        absolute_gradient >= absolute_gradient_threshold :
+        selected;
+    bool split = split_selected && max_scale > split_threshold;
 
     float remaining_max_scale = max_scale;
-    if (split) {
+    if (split && prune_large) {
         float x = expf(logf(scale[0] / 1.6f));
         float y = expf(logf(scale[1] / 1.6f));
         float z = expf(logf(scale[2] / 1.6f));
@@ -238,6 +244,7 @@ __global__ void WriteDensityGaussiansKernel(
 
 __global__ void FinishDensityControlKernel(
     float* gradient_sums,
+    float* absolute_gradient_sums,
     unsigned int* observation_counts,
     const int4* density_counts,
     const int4* density_offsets,
@@ -245,18 +252,20 @@ __global__ void FinishDensityControlKernel(
     int* control,
     int capacity) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
-    if (id < capacity) {
+    if (id < __ldg(control + 7)) {
         gradient_sums[id] = 0;
+        absolute_gradient_sums[id] = 0;
         observation_counts[id] = 0;
-    }
-    if (id < control[7]) {
-        int4 counts = density_counts[id], offsets = density_offsets[id];
+        int4 counts = __ldg(density_counts + id), offsets = __ldg(density_offsets + id);
+        int survivor_count = __ldg(control + 4);
+        int clone_count = __ldg(control + 5);
+        int split_count = __ldg(control + 6);
         bool split = counts.w != 0;
         int count = split ? 2 : counts.x + counts.y;
         for (int child = 0; child < count; ++child) {
             int destination = split ?
-                control[4] + control[5] + child * control[6] + offsets.w :
-                (child == 0 && counts.x ? offsets.x : control[4] + offsets.y);
+                survivor_count + clone_count + child * split_count + offsets.w :
+                (child == 0 && counts.x ? offsets.x : survivor_count + offsets.y);
             samples[destination] = counts.y || counts.z ? 1.0f : 0.0f;
             reinterpret_cast<int*>(samples + capacity)[destination] = id;
         }
@@ -270,8 +279,10 @@ __global__ void FinishDensityControlKernel(
 
 __global__ void AccumulateRoundStatisticsKernel(
     const float* statistics,
+    const float* absolute_statistics,
     const int* control,
     float* gradient_sums,
+    float* absolute_gradient_sums,
     unsigned int* observation_counts,
     int gaussian_count) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -279,6 +290,7 @@ __global__ void AccumulateRoundStatisticsKernel(
         return;
     }
     gradient_sums[id] += statistics[id];
+    absolute_gradient_sums[id] += absolute_statistics[id];
     observation_counts[id] += static_cast<unsigned int>(statistics[gaussian_count + id]);
 }
 
@@ -301,6 +313,7 @@ DensityController::~DensityController() {
     cudaFree(spare_gaussian_parameters_);
     cudaFree(history_parent_ids_);
     cudaFree(gradient_sums_);
+    cudaFree(absolute_gradient_sums_);
     cudaFree(samples_);
     cudaFree(observation_counts_);
     cudaFree(density_counts_);
@@ -314,16 +327,20 @@ bool DensityController::Reserve(int capacity) {
         return true;
     }
     float* gradient_sums = nullptr;
+    float* absolute_gradient_sums = nullptr;
     float* samples = nullptr;
     unsigned int* observation_counts = nullptr;
     int* density_counts = nullptr;
     int* density_offsets = nullptr;
     size_t bytes = static_cast<size_t>(capacity) * sizeof(int);
-    if (cudaMalloc(&gradient_sums, bytes) != cudaSuccess || cudaMalloc(&observation_counts, bytes) != cudaSuccess ||
+    if (cudaMalloc(&gradient_sums, bytes) != cudaSuccess ||
+        cudaMalloc(&absolute_gradient_sums, bytes) != cudaSuccess ||
+        cudaMalloc(&observation_counts, bytes) != cudaSuccess ||
         cudaMalloc(&density_counts, 4 * (bytes + sizeof(int))) != cudaSuccess ||
         cudaMalloc(&density_offsets, 4 * (bytes + sizeof(int))) != cudaSuccess ||
         cudaMalloc(&samples, 6 * bytes) != cudaSuccess) {
         cudaFree(gradient_sums);
+        cudaFree(absolute_gradient_sums);
         cudaFree(samples);
         cudaFree(observation_counts);
         cudaFree(density_counts);
@@ -333,6 +350,10 @@ bool DensityController::Reserve(int capacity) {
     cudaError_t result = cudaSuccess;
     if (capacity_ > 0) {
         result = cudaMemcpyAsync(gradient_sums, gradient_sums_, sizeof(float) * capacity_, cudaMemcpyDeviceToDevice);
+        if (result == cudaSuccess) {
+            result = cudaMemcpyAsync(absolute_gradient_sums, absolute_gradient_sums_,
+                sizeof(float) * capacity_, cudaMemcpyDeviceToDevice);
+        }
         if (result == cudaSuccess) {
             result = cudaMemcpyAsync(observation_counts,
                 observation_counts_,
@@ -356,10 +377,14 @@ bool DensityController::Reserve(int capacity) {
         result = cudaMemsetAsync(gradient_sums + capacity_, 0, sizeof(float) * (capacity - capacity_));
     }
     if (result == cudaSuccess) {
+        result = cudaMemsetAsync(absolute_gradient_sums + capacity_, 0, sizeof(float) * (capacity - capacity_));
+    }
+    if (result == cudaSuccess) {
         result = cudaMemsetAsync(observation_counts + capacity_, 0, sizeof(unsigned int) * (capacity - capacity_));
     }
     if (result != cudaSuccess) {
         cudaFree(gradient_sums);
+        cudaFree(absolute_gradient_sums);
         cudaFree(samples);
         cudaFree(observation_counts);
         cudaFree(density_counts);
@@ -367,12 +392,14 @@ bool DensityController::Reserve(int capacity) {
         return false;
     }
     cudaFree(gradient_sums_);
+    cudaFree(absolute_gradient_sums_);
     cudaFree(observation_counts_);
     cudaFree(density_counts_);
     cudaFree(density_offsets_);
     cudaFree(samples_);
     samples_ = samples;
     gradient_sums_ = gradient_sums;
+    absolute_gradient_sums_ = absolute_gradient_sums;
     observation_counts_ = observation_counts;
     density_counts_ = density_counts;
     density_offsets_ = density_offsets;
@@ -393,6 +420,7 @@ bool DensityController::Initialize(
         return false;
     }
     if (cudaMemsetAsync(gradient_sums_, 0, sizeof(float) * capacity_) != cudaSuccess ||
+        cudaMemsetAsync(absolute_gradient_sums_, 0, sizeof(float) * capacity_) != cudaSuccess ||
         cudaMemsetAsync(observation_counts_, 0, sizeof(unsigned int) * capacity_) != cudaSuccess) {
         return false;
     }
@@ -438,7 +466,8 @@ bool DensityController::ControlDensity(
     float min_opacity,
     float max_screen_size,
     unsigned long long seed,
-    int* changes) {
+    int* changes,
+    float absolute_gradient_threshold) {
     int gaussian_count = gaussians.gaussian_count_;
     const float* parameters = gaussians.gaussians_;
     if (!control_ || (!parameters && gaussian_count > 0) ||
@@ -446,7 +475,8 @@ bool DensityController::ControlDensity(
         gaussian_count != parameter_stride_ || spare_gaussian_stride_ < 0 || spare_gaussian_stride_ > INT_MAX / 6 ||
         !std::isfinite(scene_extent) || scene_extent < 0 || !std::isfinite(gradient_threshold) ||
         gradient_threshold < 0 || !std::isfinite(percent_dense) || percent_dense < 0 || !std::isfinite(min_opacity) ||
-        min_opacity < 0 || min_opacity > 1 || !std::isfinite(max_screen_size) || max_screen_size < 0) {
+        min_opacity < 0 || min_opacity > 1 || !std::isfinite(max_screen_size) || max_screen_size < 0 ||
+        !std::isfinite(absolute_gradient_threshold) || absolute_gradient_threshold < 0) {
         return false;
     }
     size_t scan_bytes = 0;
@@ -472,6 +502,7 @@ bool DensityController::ControlDensity(
     }
     CountDensityChangesKernel<<<GetGridSize(gaussian_count + 1, kBlockSize), kBlockSize>>>(parameters,
         gradient_sums_,
+        absolute_gradient_sums_,
         observation_counts_,
         control_,
         counts,
@@ -480,7 +511,8 @@ bool DensityController::ControlDensity(
         percent_dense * scene_extent,
         min_opacity,
         0.1f * scene_extent,
-        max_screen_size > 0);
+        max_screen_size > 0,
+        absolute_gradient_threshold);
     if (cub::DeviceScan::ExclusiveScan(scan_storage_,
             scan_bytes,
             counts,
@@ -560,7 +592,8 @@ bool DensityController::ControlDensity(
         history_parent_ids_,
         gaussian_count,
         spare_gaussian_stride_);
-    FinishDensityControlKernel<<<GetGridSize(capacity_, kBlockSize), kBlockSize>>>(gradient_sums_,
+    FinishDensityControlKernel<<<GetGridSize(gaussian_count, kBlockSize), kBlockSize>>>(gradient_sums_,
+        absolute_gradient_sums_,
         observation_counts_,
         reinterpret_cast<int4*>(density_counts_),
         reinterpret_cast<int4*>(density_offsets_),
@@ -579,16 +612,19 @@ bool DensityController::ControlDensity(
 
 bool DensityController::AccumulateStatistics(
     const float* statistics,
+    const float* absolute_statistics,
     int gaussian_count) {
     if (gaussian_count == 0) {
         return true;
     }
-    if (!control_ || !statistics || gaussian_count < 0 || gaussian_count > capacity_) {
+    if (!control_ || !statistics || !absolute_statistics || gaussian_count < 0 || gaussian_count > capacity_) {
         return false;
     }
     AccumulateRoundStatisticsKernel<<<GetGridSize(gaussian_count, kBlockSize), kBlockSize>>>(statistics,
+        absolute_statistics,
         control_,
         gradient_sums_,
+        absolute_gradient_sums_,
         observation_counts_,
         gaussian_count);
     return cudaGetLastError() == cudaSuccess;
@@ -596,11 +632,12 @@ bool DensityController::AccumulateStatistics(
 
 bool DensityController::ResetOpacity(
     float* parameters,
-    int stride) {
-    if (!control_ || stride != parameter_stride_ || (!parameters && stride > 0)) {
+    int stride,
+    float max_opacity) {
+    if (!control_ || stride != parameter_stride_ || (!parameters && stride > 0) ||
+        !std::isfinite(max_opacity) || max_opacity <= 0.0f || max_opacity >= 1.0f) {
         return false;
     }
-    float max_opacity = 0.01f;
     float max_opacity_parameter = std::log(max_opacity / (1.0f - max_opacity));
     ResetDensityOpacityKernel<<<GetGridSize(stride, kBlockSize), kBlockSize>>>(control_,
         parameters,

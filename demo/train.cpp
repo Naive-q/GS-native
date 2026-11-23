@@ -1,4 +1,4 @@
-#include "gaussian_splatting.h"
+#include "core/gaussian_splatting.h"
 
 #include "io/data_io.h"
 

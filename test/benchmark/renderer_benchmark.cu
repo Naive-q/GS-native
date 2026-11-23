@@ -1,7 +1,7 @@
 #include "benchmark_support.h"
 
 #include "cpu_reference.h"
-#include "render/renderer.h"
+#include "core/render/renderer.h"
 
 int main(int argc, char** argv) {
     using namespace gs_native;

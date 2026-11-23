@@ -1,6 +1,6 @@
 #include "benchmark_support.h"
 
-#include "density/density_controller.h"
+#include "core/density/density_controller.h"
 
 int main(int argc, char** argv) {
     using namespace gs_native;
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
             CheckCuda(cudaMemcpy(gaussians.gaussians_, device.buffers_.gaussians_,
                 static_cast<size_t>(options.count_) * kMaxParamCount * sizeof(float), cudaMemcpyDeviceToDevice));
             if (!controller.Initialize(options.count_, options.count_) ||
-                !controller.AccumulateStatistics(stats.Get(), options.count_)) throw std::runtime_error("Density setup failed");
+                !controller.AccumulateStatistics(stats.Get(), stats.Get(), options.count_)) throw std::runtime_error("Density setup failed");
         };
         auto control = [&] {
             return controller.ControlDensity(
@@ -41,7 +41,9 @@ int main(int argc, char** argv) {
                 0.01f,
                 0.005f,
                 0.0f,
-                42);
+                42,
+                nullptr,
+                0.0008f);
         };
         prepare();
         if (!control()) throw std::runtime_error("Density validation failed");
