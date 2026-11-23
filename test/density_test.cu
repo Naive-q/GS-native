@@ -1,6 +1,6 @@
 #include "gpu_test.h"
 
-#include "density/density_controller.h"
+#include "core/density/density_controller.h"
 
 namespace gs_native::test {
 using DensityTest = GpuTest;

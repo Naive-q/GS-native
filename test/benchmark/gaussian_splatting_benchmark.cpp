@@ -1,6 +1,6 @@
 #include "benchmark_support.h"
 
-#include "gaussian_splatting.h"
+#include "core/gaussian_splatting.h"
 #include "io/data_io.h"
 
 #include <memory>

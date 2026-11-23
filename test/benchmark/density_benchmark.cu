@@ -1,6 +1,6 @@
 #include "benchmark_support.h"
 
-#include "density/density_controller.h"
+#include "core/density/density_controller.h"
 
 int main(int argc, char** argv) {
     using namespace gs_native;

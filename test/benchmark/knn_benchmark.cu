@@ -1,6 +1,6 @@
 #include "benchmark_support.h"
 
-#include "knn/knn.h"
+#include "core/knn/knn.h"
 
 #include <fstream>
 #include <numeric>

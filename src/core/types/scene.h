@@ -1,7 +1,7 @@
 #pragma once
 
-#include "types/camera.h"
-#include "types/point_cloud.h"
+#include "core/types/camera.h"
+#include "core/types/point_cloud.h"
 
 #include <opencv2/core.hpp>
 

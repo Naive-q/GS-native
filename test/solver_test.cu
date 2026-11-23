@@ -1,8 +1,8 @@
 #include "gpu_test.h"
 
 #include "cpu_reference.h"
-#include "render/renderer.h"
-#include "solver/solver.h"
+#include "core/render/renderer.h"
+#include "core/solver/solver.h"
 
 namespace gs_native::test {
 using SolverTest = GpuTest;

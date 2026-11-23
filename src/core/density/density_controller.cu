@@ -1,6 +1,6 @@
-#include "density/density_controller.h"
+#include "core/density/density_controller.h"
 
-#include "types/buffers.h"
+#include "core/types/buffers.h"
 #include "util/cuda_util.h"
 
 #include <cub/cub.cuh>

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "types/buffers.h"
-#include "types/scene.h"
-#include "types/gaussian.h"
+#include "core/types/buffers.h"
+#include "core/types/scene.h"
+#include "core/types/gaussian.h"
 
 #include <cuda_runtime.h>
 #include <algorithm>

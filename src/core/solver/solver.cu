@@ -1,6 +1,6 @@
-#include "solver/solver.h"
+#include "core/solver/solver.h"
 
-#include "render/renderer.h"
+#include "core/render/renderer.h"
 
 #include <cuda_runtime.h>
 

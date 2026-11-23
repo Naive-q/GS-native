@@ -1,7 +1,7 @@
 #include "gpu_test.h"
 
 #include "cpu_reference.h"
-#include "render/renderer.h"
+#include "core/render/renderer.h"
 
 namespace gs_native::test {
 using RendererTest = GpuTest;

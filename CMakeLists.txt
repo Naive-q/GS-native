@@ -25,13 +25,13 @@ if(WIN32)
 endif()
 
 add_library(gs-native STATIC
-    src/gaussian_splatting.cpp
-    src/render/renderer.cu
-    src/solver/solver.cu
-    src/density/density_controller.cu
+    src/core/gaussian_splatting.cpp
+    src/core/render/renderer.cu
+    src/core/solver/solver.cu
+    src/core/density/density_controller.cu
     src/io/data_io.cpp
-    src/knn/knn.cu)
-set_source_files_properties(src/knn/knn.cu PROPERTIES COMPILE_DEFINITIONS "EIGEN_NO_CUDA;FMT_UNICODE=0")
+    src/core/knn/knn.cu)
+set_source_files_properties(src/core/knn/knn.cu PROPERTIES COMPILE_DEFINITIONS "EIGEN_NO_CUDA;FMT_UNICODE=0")
 target_include_directories(gs-native PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen>
