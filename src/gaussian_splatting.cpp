@@ -172,7 +172,7 @@ bool GaussianSplatting::Train(int iterations) {
             GS_NATIVE_ERROR("Iteration {}: target upload failed for {}.", next, source.image_name_);
             return false;
         }
-        bool collect_l1 = completed_ >= 4900 && completed_ < 10000;
+        bool collect_l1 = completed_ >= 4900 && completed_ < 14900;
         bool rendered = renderer_.Render(gaussians_, camera, background_, image_, sh_degree_, collect_l1);
         if (!rendered) {
             GS_NATIVE_ERROR("Iteration {}: rendering failed for {}.", next, source.image_name_);
