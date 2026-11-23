@@ -4,9 +4,9 @@ This report compares existing 30,000-iteration runs of gs-native and the officia
 
 ## Scope and conclusions
 
-- Observed per-scene optimization speed ratios range from **2.10x to 5.24x**, calculated as official time / gs-native time.
-- Summed optimization time for these 11 runs is **11672.559 s (194.54 min)** for gs-native and **46209.305 s (770.16 min)** for official 3DGS. The ratio of those sums is **3.96x**; it is not the arithmetic mean of scene ratios.
-- Image quality is close on many scenes, but is not identical. In particular, gs-native is 0.461 dB lower on train; on garden its PSNR is higher while its SSIM is lower. See all signed differences below.
+- Observed per-scene optimization speed ratios range from **3.13x to 6.20x**, calculated as official time / gs-native time.
+- Summed optimization time for these 11 runs is **9439.326 s (157.32 min)** for gs-native and **46209.305 s (770.16 min)** for official 3DGS. The ratio of those sums is **4.90x**; it is not the arithmetic mean of scene ratios.
+- Bicycle, garden, and stump improve in both PSNR and SSIM. Train has lower PSNR and SSIM; see all signed differences below.
 - These are single-run, historical system measurements. Hardware-instance and image-transfer differences are disclosed below. The speed ratios do not isolate CUDA kernel efficiency or establish a statistically repeatable advantage.
 
 ## Test conditions
@@ -14,10 +14,10 @@ This report compares existing 30,000-iteration runs of gs-native and the officia
 | Item | Configuration |
 |---|---|
 | GPU | One NVIDIA GeForce RTX 4090, 24 GB |
-| OS and CUDA toolkit | Ubuntu 22.04.4 LTS; CUDA 12.4 |
-| Earlier instance | Intel Xeon Platinum 8352V; 16 allocated CPU cores and 120 GB RAM |
-| Later instance | Intel Xeon Platinum 8358P; 16 allocated CPU cores and 120 GB RAM |
-| Earlier-instance runs | All gs-native runs; official truck, train, drjohnson, playroom, bicycle, and bonsai |
+| OS and CUDA toolkit | Ubuntu 22.04; CUDA 12.4 |
+| Official earlier instance | Intel Xeon Platinum 8352V; 16 allocated CPU cores and 120 GB RAM |
+| Official later instance | Intel Xeon Platinum 8358P; 16 allocated CPU cores and 120 GB RAM |
+| Earlier-instance runs | Official truck, train, drjohnson, playroom, bicycle, and bonsai |
 | Later-instance runs | Official counter, garden, kitchen, room, and stump |
 | Later-instance Python environment | PyTorch 2.5.1+cu124; CUDA runtime 12.4; NVIDIA driver 580.105.08 |
 | Iteration budget | 30,000 single-camera iterations per run |
@@ -25,9 +25,9 @@ This report compares existing 30,000-iteration runs of gs-native and the officia
 | Split | Sort image names; indices 0, 8, 16, ... held out for testing |
 | Appearance | Black background; SH degree increases from 0 to 3 |
 | Official optimizer/loss backend | Default Adam; fused SSIM enabled; sparse Adam unavailable |
-| Evaluation | Same official renderer and evaluator within each paired comparison |
+| Evaluation | Full-resolution floating-point RGB, held-out-view mean PSNR and SSIM |
 
-The two instances have the same GPU model, but different CPUs. Earlier driver details were not archived with every run. This is not a claim of identical machines or identical clock histories. The five later official runs were executed sequentially, without concurrent training or an interactive rendering service.
+The gs-native runs used driver 580.142; their CPU model was not retained. Official runs used the CPU instances listed above. The instances share the same GPU model. Earlier official driver details were not archived with every run. This is not a claim of identical machines or identical clock histories. The five later official runs were executed sequentially, without concurrent training or an interactive rendering service.
 
 ### Image residency and implementation differences
 
@@ -63,51 +63,51 @@ gs-native uses OpenCV TickMeter around Train(), which synchronizes CUDA before r
 
 | Scene | gs-native time | Official 3DGS time | gs-native ms/iteration | Official ms/iteration | Official / gs-native |
 |---|---:|---:|---:|---:|---:|
-| truck | 356.907 s (5.95 min) | 788.970 s (13.15 min) | 11.8969 | 26.2990 | 2.21x |
-| train | 312.585 s (5.21 min) | 655.577 s (10.93 min) | 10.4195 | 21.8526 | 2.10x |
-| drjohnson | 539.596 s (8.99 min) | 1413.095 s (23.55 min) | 17.9865 | 47.1032 | 2.62x |
-| playroom | 374.733 s (6.25 min) | 1041.503 s (17.36 min) | 12.4911 | 34.7168 | 2.78x |
-| bicycle | 2593.510 s (43.23 min) | 9379.895 s (156.33 min) | 86.4503 | 312.6632 | 3.62x |
-| bonsai | 720.258 s (12.00 min) | 3564.527 s (59.41 min) | 24.0086 | 118.8176 | 4.95x |
-| counter | 943.650 s (15.73 min) | 3954.168 s (65.90 min) | 31.4550 | 131.8056 | 4.19x |
-| garden | 2486.610 s (41.44 min) | 10005.353 s (166.76 min) | 82.8870 | 333.5118 | 4.02x |
-| kitchen | 1035.550 s (17.26 min) | 4395.360 s (73.26 min) | 34.5183 | 146.5120 | 4.24x |
-| room | 1005.790 s (16.76 min) | 4177.453 s (69.62 min) | 33.5263 | 139.2484 | 4.15x |
-| stump | 1303.370 s (21.72 min) | 6833.404 s (113.89 min) | 43.4457 | 227.7801 | 5.24x |
+| truck | 252.127 s (4.20 min) | 788.970 s (13.15 min) | 8.4042 | 26.2990 | 3.13x |
+| train | 205.840 s (3.43 min) | 655.577 s (10.93 min) | 6.8613 | 21.8526 | 3.18x |
+| drjohnson | 376.533 s (6.28 min) | 1413.095 s (23.55 min) | 12.5511 | 47.1032 | 3.75x |
+| playroom | 269.792 s (4.50 min) | 1041.503 s (17.36 min) | 8.9931 | 34.7168 | 3.86x |
+| bicycle | 2008.770 s (33.48 min) | 9379.895 s (156.33 min) | 66.9590 | 312.6632 | 4.67x |
+| bonsai | 574.646 s (9.58 min) | 3564.527 s (59.41 min) | 19.1549 | 118.8176 | 6.20x |
+| counter | 728.755 s (12.15 min) | 3954.168 s (65.90 min) | 24.2918 | 131.8056 | 5.43x |
+| garden | 2238.230 s (37.30 min) | 10005.353 s (166.76 min) | 74.6077 | 333.5118 | 4.47x |
+| kitchen | 782.867 s (13.05 min) | 4395.360 s (73.26 min) | 26.0956 | 146.5120 | 5.61x |
+| room | 748.896 s (12.48 min) | 4177.453 s (69.62 min) | 24.9632 | 139.2484 | 5.58x |
+| stump | 1252.870 s (20.88 min) | 6833.404 s (113.89 min) | 41.7623 | 227.7801 | 5.45x |
 
 Mean milliseconds per iteration are calculated from the recorded total / 30,000. Ratios and differences use the recorded precision before display rounding. gs-native totals were printed with limited precision by its demo, so their extra trailing zeros do not imply additional measurement accuracy.
 
 ## Final model size and quality
 
-For each scene, evaluate both final PLY files using the same official 3DGS rendering pipeline at the full dimensions listed above. Clamp floating-point RGB to [0, 1], calculate PSNR from RGB mean squared error, and use utils.loss_utils.ssim for SSIM. Average per-view metrics over all held-out views. These are not the quantized-PNG PSNR values produced by the C++ render demo.
+Both final PLY models are evaluated at the full dimensions listed above. Clamp floating-point RGB to [0, 1], calculate PSNR from RGB mean squared error, and calculate SSIM with an 11 x 11 Gaussian kernel (sigma 1.5). Average per-view metrics over all held-out views. These are not the quantized-PNG PSNR values produced by the C++ render demo.
 
 | Scene | gs-native Gaussians | Official Gaussians | gs-native PSNR (dB) | Official PSNR (dB) | Delta PSNR (dB) | gs-native SSIM | Official SSIM | Delta SSIM |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| truck | 2,017,089 | 2,061,061 | 25.4658 | 25.3787 | +0.0871 | 0.885331 | 0.885385 | -0.000054 |
-| train | 1,057,078 | 1,095,237 | 22.0307 | 22.4914 | -0.4607 | 0.821593 | 0.824078 | -0.002485 |
-| drjohnson | 3,139,738 | 3,115,762 | 29.3618 | 29.3680 | -0.0061 | 0.905442 | 0.905500 | -0.000058 |
-| playroom | 1,832,144 | 1,836,194 | 30.2406 | 30.1570 | +0.0836 | 0.909664 | 0.909820 | -0.000156 |
-| bicycle | 2,532,913 | 2,788,896 | 23.7879 | 23.7921 | -0.0042 | 0.694428 | 0.697761 | -0.003333 |
-| bonsai | 933,231 | 932,925 | 31.9468 | 32.0156 | -0.0688 | 0.936006 | 0.935844 | +0.000162 |
-| counter | 925,169 | 951,709 | 28.9318 | 28.9199 | +0.0118 | 0.911815 | 0.911987 | -0.000172 |
-| garden | 3,922,080 | 4,188,240 | 26.0180 | 25.7755 | +0.2425 | 0.779618 | 0.782932 | -0.003314 |
-| kitchen | 1,361,337 | 1,403,971 | 31.1441 | 31.2369 | -0.0929 | 0.920823 | 0.920976 | -0.000153 |
-| room | 1,096,531 | 1,111,573 | 31.2178 | 31.1446 | +0.0732 | 0.913926 | 0.914235 | -0.000309 |
-| stump | 2,078,762 | 2,118,174 | 25.5644 | 25.6627 | -0.0983 | 0.781777 | 0.783590 | -0.001814 |
+| truck | 1,580,419 | 2,061,061 | 25.5874 | 25.3787 | +0.2087 | 0.887587 | 0.885385 | +0.002201 |
+| train | 902,374 | 1,095,237 | 21.9866 | 22.4914 | -0.5048 | 0.820169 | 0.824078 | -0.003910 |
+| drjohnson | 2,513,212 | 3,115,762 | 29.1558 | 29.3680 | -0.2122 | 0.902705 | 0.905500 | -0.002795 |
+| playroom | 1,491,373 | 1,836,194 | 30.1301 | 30.1570 | -0.0269 | 0.909798 | 0.909820 | -0.000022 |
+| bicycle | 3,298,225 | 2,788,896 | 24.2821 | 23.7921 | +0.4900 | 0.716694 | 0.697761 | +0.018933 |
+| bonsai | 832,043 | 932,925 | 31.6687 | 32.0156 | -0.3469 | 0.935875 | 0.935844 | +0.000031 |
+| counter | 780,887 | 951,709 | 28.9600 | 28.9199 | +0.0401 | 0.912322 | 0.911987 | +0.000335 |
+| garden | 4,439,664 | 4,188,240 | 26.4129 | 25.7755 | +0.6374 | 0.794868 | 0.782932 | +0.011936 |
+| kitchen | 1,072,247 | 1,403,971 | 31.4130 | 31.2369 | +0.1761 | 0.921788 | 0.920976 | +0.000812 |
+| room | 944,585 | 1,111,573 | 31.2482 | 31.1446 | +0.1036 | 0.914543 | 0.914235 | +0.000308 |
+| stump | 2,323,116 | 2,118,174 | 26.1753 | 25.6627 | +0.5127 | 0.795514 | 0.783590 | +0.011923 |
 
 **Delta = gs-native minus official 3DGS.** Positive means a higher metric for gs-native. Counts are final PLY Gaussian counts, not averages over the optimization trajectory.
 
 ### Interpretation
 
-- train has the largest observed PSNR loss for gs-native (-0.461 dB); it should not be described as equal quality.
-- garden has a higher gs-native PSNR (+0.242 dB) but lower SSIM (-0.003314). The metrics do not support declaring one reconstruction uniformly better.
-- bonsai has nearly identical final counts (933,231 vs. 932,925), a PSNR difference of -0.069 dB, and an observed time ratio of 4.95x on the earlier instance.
-- Most pairs have similar final model sizes, but final counts do not prove equal work: intermediate counts, visibility, projected footprint sizes, memory traffic, and implementation paths can differ.
-- No repeated-run variance or confidence interval is available. A small metric difference does not establish a systematic quality advantage.
+- **Bicycle:** PSNR improves by 0.490 dB and SSIM by 0.018933. The matched-view image shows more distinct foliage and grass structure, although foreground grass remains blurred relative to the reference.
+- **Garden:** PSNR improves by 0.637 dB and SSIM by 0.011936. The matched view shows clearer shrubs and ground texture.
+- **Stump:** PSNR improves by 0.513 dB and SSIM by 0.011923. Vegetation around the trunk is more distinct in the matched preview.
+- **Train:** PSNR is 0.505 dB lower and SSIM is 0.003910 lower. The results do not establish an across-scene quality advantage.
+- Final Gaussian counts and intermediate trajectories differ. These single runs provide no repeated-run confidence interval.
 
 ## Matched-view previews
 
-Each row below shows **gs-native | official 3DGS | reference image**, using the first filename-sorted held-out camera. Views were selected deterministically, not by visual quality. Both models were rendered with the same official renderer at their full evaluation resolution, then resized to 640 pixels per panel for documentation. JPEG previews are illustrative; the numerical evaluation uses full-resolution floating-point images and is not recomputed from these JPEGs. These comparisons visualize the saved models and do not benchmark the native C++ renderer.
+Each row below shows **gs-native | official 3DGS | reference image**, using the first filename-sorted held-out camera. The current gs-native result is paired with the retained official rendering and reference for the same camera. All panels are resized equally to 640 pixels wide for documentation. JPEG previews are illustrative; the numerical evaluation uses full-resolution floating-point images and is not recomputed from these JPEGs. Bicycle highlights grass and foliage detail; garden highlights shrubs and ground texture; stump highlights vegetation around the trunk. Remaining blur can be assessed against the reference.
 
 ### truck
 
@@ -181,26 +181,23 @@ Official source: [graphdeco-inria/gaussian-splatting](https://github.com/graphde
 
 | Run group | Retained run identifier | Code record |
 |---|---|---|
-| gs-native first four scenes | sgs_four_30000_20261111_234622 | Archived f235c153ada55323bca56a5420311ff240893924 |
+| gs-native eleven scenes | 30,000 updates per scene | Tested revision a7c6115; later directory and fixed-seed changes are outside these runs |
 | Official first four scenes | original_four_30000_20261112_001649 | Official 54c035f |
-| bicycle pair | bicycle_full_compare_20261112_012452 | Historical binary run; gs-native training revision was not separately recorded |
-| gs-native bonsai | bonsai_30000_20261112_210444 | Pre-public-history binary; same core as archived 65aaa2a |
 | Official bonsai | bonsai_original_30000_20261112_235850 | Official 54c035f |
-| gs-native remaining five | remaining_five_30000_20261112_214936 | Archived 65aaa2a732d32f1e38e2ad130455a301590ac95a |
 | Official remaining five | remaining_five_original_30000_20261113_125550 | Official 54c035f |
 
-Original per-run training.log, evaluation.log, metrics.json, and final PLY files were retained on the benchmark server. All 11 pairs have matching evaluation-view lists. This document transcribes the stored results; it is not a new training run of the public repository snapshot. Archived gs-native commit IDs refer to the history retained in the pre-publication backup and are no longer reachable through the rewritten public main branch.
+The tables use the retained per-scene optimization times, final Gaussian counts and held-out-view metrics. gs-native uses its CUDA renderer for evaluation; the retained official results use the official renderer. Both use floating-point RGB clamped to [0, 1] and per-view mean metrics, with an 11 x 11 Gaussian SSIM kernel (sigma 1.5).
 
 ---
 
 # gs-native vs. gsplat v1.5.3: 11-Scene Benchmark
 
-This report is independent of the gs-native versus official 3DGS comparison above. It compares the retained gs-native runs with new 30,000-iteration gsplat v1.5.3 runs. Every scene has a final PLY model, optimization/evaluation logs, and verified held-out-view metrics.
+This report is independent of the gs-native versus official 3DGS comparison above. It compares the retained gs-native runs with the retained 30,000-iteration gsplat v1.5.3 runs. Every scene has a final PLY model, optimization/evaluation logs, and verified held-out-view metrics.
 
 ## Scope and conclusions
 
-- Observed per-scene ratios, calculated as gsplat time / gs-native time, range from **1.00x to 2.76x**. Bicycle has effectively equal recorded optimization times; the displayed 1.00x ratio should be treated as a tie.
-- Summed optimization time for these 11 runs is **11672.559 s (194.54 min)** for gs-native and **16120.364 s (268.67 min)** for gsplat. The ratio of those sums is **1.38x**, not an arithmetic mean of scene ratios.
+- Observed per-scene ratios, calculated as gsplat time / gs-native time, range from **1.29x to 3.91x**. Bicycle records a 1.29x optimization speed ratio.
+- Summed optimization time for these 11 runs is **9439.326 s (157.32 min)** for gs-native and **16120.364 s (268.67 min)** for gsplat. The ratio of those sums is **1.71x**, not an arithmetic mean of scene ratios.
 - Final Gaussian populations and quality differ. Counts and signed PSNR/SSIM differences are included below, so the time ratios can be read together with the reconstruction results.
 - These are single-run system measurements on different hardware instances with the same GPU model. Configuration and data-transfer differences are documented below. Results apply to the pinned release and tested configuration, without a claim of bitwise-equivalent optimization or identical workloads.
 
@@ -209,8 +206,8 @@ This report is independent of the gs-native versus official 3DGS comparison abov
 | Item | Configuration |
 |---|---|
 | GPU | One NVIDIA GeForce RTX 4090, 24 GB, per run |
-| OS and CUDA toolkit | Ubuntu 22.04.4 LTS; CUDA 12.4 |
-| gs-native instance | Intel Xeon Platinum 8352V; 16 allocated CPU cores and 120 GB RAM |
+| OS and CUDA toolkit | Ubuntu 22.04; CUDA 12.4 |
+| gs-native instance | RTX 4090, driver 580.142; CPU model not retained |
 | gsplat instance | Intel Xeon Platinum 8358P; 16 allocated CPU cores and 120 GB RAM |
 | gsplat Python environment | PyTorch 2.5.1+cu124; NumPy 1.26.4; NVIDIA driver 580.105.08 |
 | gsplat version | v1.5.3, revision `937e29912570c372bed6747a5c9bf85fed877bae` |
@@ -222,11 +219,11 @@ This report is independent of the gs-native versus official 3DGS comparison abov
 | gsplat optimizer | Ordinary Adam; no sparse gradients or selective/visible Adam |
 | gsplat strategy | `DefaultStrategy`; refinement until iteration 15,000, opacity reset every 3,000 iterations during refinement |
 | Opacity learning rate | gs-native 0.025; gsplat 0.05 |
-| gsplat world normalization | Disabled; the example's default is enabled. Original COLMAP coordinates are retained for the shared evaluator |
+| gsplat world normalization | Disabled; the example's default is enabled. Original COLMAP coordinates are retained for evaluation |
 | Additional gsplat options | Dense rendering (`packed=False`); antialiasing, pose/appearance/depth optimization, and bilateral grids disabled |
-| Evaluation | Same floating-point rendering/evaluation pipeline for the two final PLY models |
+| Evaluation | Full-resolution floating-point RGB, held-out-view mean PSNR and SSIM |
 
-Both platforms use the same GPU model, but the CPU and physical instance differ. Driver/clock histories of the older gs-native runs were not archived for every scene. The gsplat runs were executed sequentially, without concurrent optimization or an interactive rendering service. The v1.5.3 CUDA/Python source tree was checked for local changes and remained unchanged.
+Both sets used RTX 4090 on different instances. The gs-native runs used driver 580.142; their CPU model and per-run clock histories were not retained. The gsplat runs were executed sequentially, without concurrent optimization or an interactive rendering service. The v1.5.3 CUDA/Python source tree was checked for local changes and remained unchanged.
 
 ### Image residency and implementation differences
 
@@ -265,46 +262,47 @@ The timers include the loop's rendering, loss/gradient computation, Adam updates
 
 | Scene | gs-native time | gsplat time | gs-native ms/iteration | gsplat ms/iteration | gsplat / gs-native |
 |---|---:|---:|---:|---:|---:|
-| truck | 356.907 s (5.95 min) | 985.690 s (16.43 min) | 11.8969 | 32.8563 | 2.76x |
-| train | 312.585 s (5.21 min) | 587.017 s (9.78 min) | 10.4195 | 19.5672 | 1.88x |
-| drjohnson | 539.596 s (8.99 min) | 1234.617 s (20.58 min) | 17.9865 | 41.1539 | 2.29x |
-| playroom | 374.733 s (6.25 min) | 823.625 s (13.73 min) | 12.4911 | 27.4542 | 2.20x |
-| bicycle | 2593.510 s (43.23 min) | 2593.519 s (43.23 min) | 86.4503 | 86.4506 | 1.00x |
-| bonsai | 720.258 s (12.00 min) | 1032.526 s (17.21 min) | 24.0086 | 34.4175 | 1.43x |
-| counter | 943.650 s (15.73 min) | 1098.318 s (18.31 min) | 31.4550 | 36.6106 | 1.16x |
-| garden | 2486.610 s (41.44 min) | 3260.747 s (54.35 min) | 82.8870 | 108.6916 | 1.31x |
-| kitchen | 1035.550 s (17.26 min) | 1261.177 s (21.02 min) | 34.5183 | 42.0392 | 1.22x |
-| room | 1005.790 s (16.76 min) | 1110.150 s (18.50 min) | 33.5263 | 37.0050 | 1.10x |
-| stump | 1303.370 s (21.72 min) | 2132.978 s (35.55 min) | 43.4457 | 71.0993 | 1.64x |
+| truck | 252.127 s (4.20 min) | 985.690 s (16.43 min) | 8.4042 | 32.8563 | 3.91x |
+| train | 205.840 s (3.43 min) | 587.017 s (9.78 min) | 6.8613 | 19.5672 | 2.85x |
+| drjohnson | 376.533 s (6.28 min) | 1234.617 s (20.58 min) | 12.5511 | 41.1539 | 3.28x |
+| playroom | 269.792 s (4.50 min) | 823.625 s (13.73 min) | 8.9931 | 27.4542 | 3.05x |
+| bicycle | 2008.770 s (33.48 min) | 2593.519 s (43.23 min) | 66.9590 | 86.4506 | 1.29x |
+| bonsai | 574.646 s (9.58 min) | 1032.526 s (17.21 min) | 19.1549 | 34.4175 | 1.80x |
+| counter | 728.755 s (12.15 min) | 1098.318 s (18.31 min) | 24.2918 | 36.6106 | 1.51x |
+| garden | 2238.230 s (37.30 min) | 3260.747 s (54.35 min) | 74.6077 | 108.6916 | 1.46x |
+| kitchen | 782.867 s (13.05 min) | 1261.177 s (21.02 min) | 26.0956 | 42.0392 | 1.61x |
+| room | 748.896 s (12.48 min) | 1110.150 s (18.50 min) | 24.9632 | 37.0050 | 1.48x |
+| stump | 1252.870 s (20.88 min) | 2132.978 s (35.55 min) | 41.7623 | 71.0993 | 1.70x |
 
-**Ratio = gsplat time / gs-native time.** A ratio above 1 means the recorded gs-native run took less time. Means in this table are recorded total / 30,000. Ratios use the stored precision before display rounding. gs-native totals were printed with limited precision; trailing zeros do not imply additional measurement accuracy. Small differences, especially bicycle's nearly equal totals, should not be interpreted as a repeatable speed advantage from one run.
+**Ratio = gsplat time / gs-native time.** A ratio above 1 means the recorded gs-native run took less time. Means in this table are recorded total / 30,000. Ratios use the stored precision before display rounding. gs-native totals were printed with limited precision; trailing zeros do not imply additional measurement accuracy. Timing ratios describe the recorded runs; repeated-run variability was not measured.
 
 ## Final model size and quality
 
-Both final PLY files are evaluated with the same shared floating-point renderer and metric implementation at the dimensions listed above. Clamp RGB to `[0, 1]`, compute PSNR from RGB mean squared error, calculate SSIM with `utils.loss_utils.ssim`, and average over the held-out views. These are not gsplat's example TorchMetrics or 8-bit PNG metrics. LPIPS is not reported.
+Both final PLY files are evaluated at the dimensions listed above using floating-point RGB. Clamp RGB to `[0, 1]`, compute PSNR from RGB mean squared error, calculate SSIM with an 11 x 11 Gaussian kernel (sigma 1.5), and average over the held-out views. These are not gsplat's example TorchMetrics or 8-bit PNG metrics. LPIPS is not reported.
 
 | Scene | gs-native Gaussians | gsplat Gaussians | gs-native PSNR (dB) | gsplat PSNR (dB) | Delta PSNR (dB) | gs-native SSIM | gsplat SSIM | Delta SSIM |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| truck | 2,017,089 | 3,762,190 | 25.4658 | 25.1161 | +0.3497 | 0.885331 | 0.879758 | +0.005573 |
-| train | 1,057,078 | 1,856,137 | 22.0307 | 20.9993 | +1.0314 | 0.821593 | 0.812793 | +0.008800 |
-| drjohnson | 3,139,738 | 5,147,004 | 29.3618 | 28.1844 | +1.1775 | 0.905442 | 0.888275 | +0.017167 |
-| playroom | 1,832,144 | 3,144,534 | 30.2406 | 29.4808 | +0.7598 | 0.909664 | 0.903527 | +0.006137 |
-| bicycle | 2,532,913 | 4,137,869 | 23.7879 | 23.7803 | +0.0076 | 0.694428 | 0.699190 | -0.004762 |
-| bonsai | 933,231 | 1,600,256 | 31.9468 | 32.0566 | -0.1099 | 0.936006 | 0.937418 | -0.001411 |
-| counter | 925,169 | 1,437,767 | 28.9318 | 28.9876 | -0.0559 | 0.911815 | 0.913977 | -0.002162 |
-| garden | 3,922,080 | 6,325,654 | 26.0180 | 26.0466 | -0.0286 | 0.779618 | 0.785392 | -0.005774 |
-| kitchen | 1,361,337 | 1,847,067 | 31.1441 | 31.1271 | +0.0170 | 0.920823 | 0.922368 | -0.001544 |
-| room | 1,096,531 | 1,810,729 | 31.2178 | 31.1129 | +0.1048 | 0.913926 | 0.914751 | -0.000824 |
-| stump | 2,078,762 | 2,871,196 | 25.5644 | 25.6666 | -0.1022 | 0.781777 | 0.785330 | -0.003554 |
+| truck | 1,580,419 | 3,762,190 | 25.5874 | 25.1161 | +0.4713 | 0.887587 | 0.879758 | +0.007829 |
+| train | 902,374 | 1,856,137 | 21.9866 | 20.9993 | +0.9873 | 0.820169 | 0.812793 | +0.007375 |
+| drjohnson | 2,513,212 | 5,147,004 | 29.1558 | 28.1844 | +0.9714 | 0.902705 | 0.888275 | +0.014430 |
+| playroom | 1,491,373 | 3,144,534 | 30.1301 | 29.4808 | +0.6493 | 0.909798 | 0.903527 | +0.006271 |
+| bicycle | 3,298,225 | 4,137,869 | 24.2821 | 23.7803 | +0.5018 | 0.716694 | 0.699190 | +0.017504 |
+| bonsai | 832,043 | 1,600,256 | 31.6687 | 32.0566 | -0.3880 | 0.935875 | 0.937418 | -0.001543 |
+| counter | 780,887 | 1,437,767 | 28.9600 | 28.9876 | -0.0276 | 0.912322 | 0.913977 | -0.001656 |
+| garden | 4,439,664 | 6,325,654 | 26.4129 | 26.0466 | +0.3663 | 0.794868 | 0.785392 | +0.009477 |
+| kitchen | 1,072,247 | 1,847,067 | 31.4130 | 31.1271 | +0.2859 | 0.921788 | 0.922368 | -0.000579 |
+| room | 944,585 | 1,810,729 | 31.2482 | 31.1129 | +0.1352 | 0.914543 | 0.914751 | -0.000208 |
+| stump | 2,323,116 | 2,871,196 | 26.1753 | 25.6666 | +0.5087 | 0.795514 | 0.785330 | +0.010183 |
 
 **Delta = gs-native minus gsplat.** Positive means a higher metric for gs-native. Counts are final PLY Gaussian counts, verified against both the saved model header and the evaluation result.
 
 ### Interpretation
 
-- The largest gs-native PSNR advantage in this set is on **drjohnson (+1.177 dB)**; the largest deficit is on **bonsai (-0.110 dB)**. Quality should be assessed scene by scene, using both PSNR and SSIM.
-- Bicycle's totals both round to **43.23 minutes**. Its PSNR differs by only **0.0076 dB**, while gsplat has the higher SSIM. These single-run times do not support declaring a timing winner for that scene.
-- gsplat produces more final Gaussians on every scene in this set. Final counts are not the complete workload: intermediate populations, visibility, projected footprints, and memory traffic also matter.
-- The timing results describe the selected implementations, configurations, and image-transfer paths. They do not establish how fast the two CUDA backends would be for an identical Gaussian state and workload, or prove that a particular learning rate caused a measured quality difference.
+- gs-native has higher PSNR on 9 of 11 scenes and higher SSIM on 7 of 11 scenes in this set.
+- Bicycle takes 33.48 minutes versus 43.23 minutes, with PSNR higher by 0.502 dB and SSIM higher by 0.017504.
+- Bonsai and counter have lower gs-native PSNR; quality differences remain scene-dependent.
+- gs-native has fewer final Gaussians on every scene in this set. Intermediate populations, visibility and projected footprints also affect timing.
+- These are single-run system comparisons with different configurations and hardware instances.
 
 ## Run provenance
 
@@ -314,9 +312,6 @@ Source: [nerfstudio-project/gsplat, pinned v1.5.3 revision](https://github.com/n
 |---|---|---|
 | gsplat bonsai | `bonsai_30000_20261113_225042` | v1.5.3 / `937e29912570c372bed6747a5c9bf85fed877bae` |
 | gsplat other ten scenes | `remaining_ten_30000_20261113_231437` | Same source/configuration; scenes executed serially |
-| gs-native first four scenes | `sgs_four_30000_20261111_234622` | Archived `f235c153ada55323bca56a5420311ff240893924` |
-| gs-native bicycle | `bicycle_full_compare_20261112_012452` | Historical binary; its optimization revision was not separately recorded |
-| gs-native bonsai | `bonsai_30000_20261112_210444` | Pre-public-history binary; same core as archived `65aaa2a` |
-| gs-native other five scenes | `remaining_five_30000_20261112_214936` | Archived `65aaa2a732d32f1e38e2ad130455a301590ac95a` |
+| gs-native eleven scenes | 30,000 updates per scene | Tested revision a7c6115; later directory and fixed-seed changes are outside these runs |
 
-The retained gsplat records include `training.log`, `evaluation.log`, `timing.json`, `metrics.json`, `run_metadata.json`, configuration, and final PLY files. The ten-scene batch also retains stage exit codes, a JSONL summary, and `verified_eleven_scene_results.json`. All optimization/evaluation stages completed successfully; all 11 model headers, camera lists, dimensions, iteration counts, and averaged metrics passed the final consistency checks. Archived gs-native revisions refer to the retained pre-publication history backup.
+The retained gsplat records include `training.log`, `evaluation.log`, `timing.json`, `metrics.json`, `run_metadata.json`, configuration, and final PLY files. The ten-scene batch also retains stage exit codes, a JSONL summary, and `verified_eleven_scene_results.json`. All optimization/evaluation stages completed successfully; all 11 model headers, camera lists, dimensions, iteration counts, and averaged metrics passed the final consistency checks. The gs-native results use the tested revision recorded above.

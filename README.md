@@ -8,29 +8,39 @@ The implementation follows the pipeline of [3D Gaussian Splatting](https://githu
 
 ### gs-native vs. official 3DGS
 
-Measured optimization speed ratios of **2.10x to 5.24x** versus the official Python 3DGS implementation across 11 historical runs. Each pair used the same scene, actual image resolution, held-out camera split, and a 30,000-iteration budget. Quality differences are reported below rather than assumed to be zero.
+Measured optimization speed ratios of **3.13x to 6.20x** versus the official Python 3DGS implementation across 11 historical runs. Each pair used the same scene, actual image resolution, held-out camera split, and a 30,000-iteration budget. Quality differences are reported below rather than assumed to be zero.
+
+Left to right: **gs-native | official 3DGS | reference**. Both models use the same held-out view. Previews are resized equally for display.
+
+![bicycle: gs-native, official 3DGS, reference](docs/benchmark_assets/bicycle.jpg)
+
+**Bicycle:** More distinct foliage and grass structure; foreground grass still shows blur relative to the reference.
 
 ![garden: gs-native, official 3DGS, reference](docs/benchmark_assets/garden.jpg)
 
-Left to right: **gs-native | official 3DGS | reference**. The same held-out view and official renderer are used for both models; the preview is resized for display.
+**Garden:** Clearer shrubs and ground texture in the matched view.
+
+![stump: gs-native, official 3DGS, reference](docs/benchmark_assets/stump.jpg)
+
+**Stump:** More distinct vegetation around the trunk.
 
 | Scene | gs-native time | Official 3DGS time | Speed ratio | Delta PSNR (dB) | Delta SSIM |
 |---|---:|---:|---:|---:|---:|
-| truck | 356.907 s (5.95 min) | 788.970 s (13.15 min) | 2.21x | +0.0871 | -0.000054 |
-| train | 312.585 s (5.21 min) | 655.577 s (10.93 min) | 2.10x | -0.4607 | -0.002485 |
-| drjohnson | 539.596 s (8.99 min) | 1413.095 s (23.55 min) | 2.62x | -0.0061 | -0.000058 |
-| playroom | 374.733 s (6.25 min) | 1041.503 s (17.36 min) | 2.78x | +0.0836 | -0.000156 |
-| bicycle | 2593.510 s (43.23 min) | 9379.895 s (156.33 min) | 3.62x | -0.0042 | -0.003333 |
-| bonsai | 720.258 s (12.00 min) | 3564.527 s (59.41 min) | 4.95x | -0.0688 | +0.000162 |
-| counter | 943.650 s (15.73 min) | 3954.168 s (65.90 min) | 4.19x | +0.0118 | -0.000172 |
-| garden | 2486.610 s (41.44 min) | 10005.353 s (166.76 min) | 4.02x | +0.2425 | -0.003314 |
-| kitchen | 1035.550 s (17.26 min) | 4395.360 s (73.26 min) | 4.24x | -0.0929 | -0.000153 |
-| room | 1005.790 s (16.76 min) | 4177.453 s (69.62 min) | 4.15x | +0.0732 | -0.000309 |
-| stump | 1303.370 s (21.72 min) | 6833.404 s (113.89 min) | 5.24x | -0.0983 | -0.001814 |
+| truck | 252.127 s (4.20 min) | 788.970 s (13.15 min) | 3.13x | +0.2087 | +0.002201 |
+| train | 205.840 s (3.43 min) | 655.577 s (10.93 min) | 3.18x | -0.5048 | -0.003910 |
+| drjohnson | 376.533 s (6.28 min) | 1413.095 s (23.55 min) | 3.75x | -0.2122 | -0.002795 |
+| playroom | 269.792 s (4.50 min) | 1041.503 s (17.36 min) | 3.86x | -0.0269 | -0.000022 |
+| bicycle | 2008.770 s (33.48 min) | 9379.895 s (156.33 min) | 4.67x | +0.4900 | +0.018933 |
+| bonsai | 574.646 s (9.58 min) | 3564.527 s (59.41 min) | 6.20x | -0.3469 | +0.000031 |
+| counter | 728.755 s (12.15 min) | 3954.168 s (65.90 min) | 5.43x | +0.0401 | +0.000335 |
+| garden | 2238.230 s (37.30 min) | 10005.353 s (166.76 min) | 4.47x | +0.6374 | +0.011936 |
+| kitchen | 782.867 s (13.05 min) | 4395.360 s (73.26 min) | 5.61x | +0.1761 | +0.000812 |
+| room | 748.896 s (12.48 min) | 4177.453 s (69.62 min) | 5.58x | +0.1036 | +0.000308 |
+| stump | 1252.870 s (20.88 min) | 6833.404 s (113.89 min) | 5.45x | +0.5127 | +0.011923 |
 
 **Speed ratio = official time / gs-native time. Delta = gs-native minus official.** Timings include optimization and density control, and exclude loading, initialization, saving, and evaluation. PSNR and SSIM use full-resolution floating-point evaluation, not the quantized PNG outputs of the render demo.
 
-**Test platforms:** RTX 4090 (24 GB), Ubuntu 22.04.4 LTS, CUDA 12.4. All gs-native runs and the first six official runs used a Xeon Platinum 8352V instance; the five later official runs used a Xeon Platinum 8358P instance. Image residency/transfer paths also differ. These are single-run system measurements, not an isolated kernel benchmark or a guarantee of equal quality; train is 0.461 dB lower for gs-native.
+**Test platforms:** RTX 4090 (24 GB), Ubuntu 22.04, CUDA 12.4. The gs-native runs used driver 580.142. Official runs used the previously recorded Xeon Platinum 8352V and 8358P instances; the CPU model for this gs-native run was not retained. Image residency/transfer paths also differ. These are single-run system measurements. Bicycle, garden, and stump improve in both PSNR and SSIM; train is 0.505 dB lower for gs-native.
 
 [Full 11-scene report: resolutions, camera counts, model sizes, absolute metrics, run provenance, and all matched-view previews](docs/benchmark.md).
 
@@ -40,21 +50,21 @@ This is a separate paired comparison against [gsplat v1.5.3](https://github.com/
 
 | Scene | gs-native time | gsplat time | Speed ratio | Delta PSNR (dB) | Delta SSIM |
 |---|---:|---:|---:|---:|---:|
-| truck | 356.907 s (5.95 min) | 985.690 s (16.43 min) | 2.76x | +0.3497 | +0.005573 |
-| train | 312.585 s (5.21 min) | 587.017 s (9.78 min) | 1.88x | +1.0314 | +0.008800 |
-| drjohnson | 539.596 s (8.99 min) | 1234.617 s (20.58 min) | 2.29x | +1.1775 | +0.017167 |
-| playroom | 374.733 s (6.25 min) | 823.625 s (13.73 min) | 2.20x | +0.7598 | +0.006137 |
-| bicycle | 2593.510 s (43.23 min) | 2593.519 s (43.23 min) | 1.00x | +0.0076 | -0.004762 |
-| bonsai | 720.258 s (12.00 min) | 1032.526 s (17.21 min) | 1.43x | -0.1099 | -0.001411 |
-| counter | 943.650 s (15.73 min) | 1098.318 s (18.31 min) | 1.16x | -0.0559 | -0.002162 |
-| garden | 2486.610 s (41.44 min) | 3260.747 s (54.35 min) | 1.31x | -0.0286 | -0.005774 |
-| kitchen | 1035.550 s (17.26 min) | 1261.177 s (21.02 min) | 1.22x | +0.0170 | -0.001544 |
-| room | 1005.790 s (16.76 min) | 1110.150 s (18.50 min) | 1.10x | +0.1048 | -0.000824 |
-| stump | 1303.370 s (21.72 min) | 2132.978 s (35.55 min) | 1.64x | -0.1022 | -0.003554 |
+| truck | 252.127 s (4.20 min) | 985.690 s (16.43 min) | 3.91x | +0.4713 | +0.007829 |
+| train | 205.840 s (3.43 min) | 587.017 s (9.78 min) | 2.85x | +0.9873 | +0.007375 |
+| drjohnson | 376.533 s (6.28 min) | 1234.617 s (20.58 min) | 3.28x | +0.9714 | +0.014430 |
+| playroom | 269.792 s (4.50 min) | 823.625 s (13.73 min) | 3.05x | +0.6493 | +0.006271 |
+| bicycle | 2008.770 s (33.48 min) | 2593.519 s (43.23 min) | 1.29x | +0.5018 | +0.017504 |
+| bonsai | 574.646 s (9.58 min) | 1032.526 s (17.21 min) | 1.80x | -0.3880 | -0.001543 |
+| counter | 728.755 s (12.15 min) | 1098.318 s (18.31 min) | 1.51x | -0.0276 | -0.001656 |
+| garden | 2238.230 s (37.30 min) | 3260.747 s (54.35 min) | 1.46x | +0.3663 | +0.009477 |
+| kitchen | 782.867 s (13.05 min) | 1261.177 s (21.02 min) | 1.61x | +0.2859 | -0.000579 |
+| room | 748.896 s (12.48 min) | 1110.150 s (18.50 min) | 1.48x | +0.1352 | -0.000208 |
+| stump | 1252.870 s (20.88 min) | 2132.978 s (35.55 min) | 1.70x | +0.5087 | +0.010183 |
 
-**Speed ratio = gsplat time / gs-native time. Delta = gs-native minus gsplat.** A ratio above 1 means a shorter recorded gs-native time. Bicycle is effectively tied: both totals round to 43.23 minutes. Loading, initialization, warmup, saving, and evaluation are outside the optimization timers; in-loop density control and opacity resets remain included.
+**Speed ratio = gsplat time / gs-native time. Delta = gs-native minus gsplat.** A ratio above 1 means a shorter recorded gs-native time. Bicycle takes 33.48 minutes for gs-native and 43.23 minutes for gsplat. Loading, initialization, warmup, saving, and evaluation are outside the optimization timers; in-loop density control and opacity resets remain included.
 
-**Configuration and platform differences:** gsplat uses `DefaultStrategy` and ordinary Adam, with opacity learning rate **0.05**, versus **0.025** in gs-native. World-space normalization is disabled in the gsplat driver to retain the original COLMAP coordinates. The historical gs-native runs used Xeon Platinum 8352V, while these gsplat runs used Xeon Platinum 8358P; both platforms used RTX 4090, Ubuntu 22.04.4 LTS, and CUDA 12.4. Host target-image dtypes and Gaussian population trajectories differ. The ratios describe the tested systems and configurations; they do not isolate CUDA kernel performance or imply equal reconstruction quality.
+**Configuration and platform differences:** gsplat uses `DefaultStrategy` and ordinary Adam, with opacity learning rate **0.05**, versus **0.025** in gs-native. World-space normalization is disabled in the gsplat driver to retain the original COLMAP coordinates. Both sets used RTX 4090, Ubuntu 22.04, and CUDA 12.4 on different instances. The gsplat instance used Xeon Platinum 8358P; the CPU model for this gs-native run was not retained. Host target-image dtypes and Gaussian population trajectories differ. The ratios describe the tested systems and configurations; they do not isolate CUDA kernel performance or imply equal reconstruction quality.
 
 [Full gs-native vs. gsplat report: conditions, camera counts, absolute metrics, timings, and provenance](docs/benchmark.md#gs-native-vs-gsplat-v153-11-scene-benchmark).
 
@@ -63,7 +73,7 @@ This is a separate paired comparison against [gsplat v1.5.3](https://github.com/
 - COLMAP binary scene loading and initialization from sparse points with built-in CUDA three-nearest-neighbor search.
 - GPU rendering with projection, tile/depth sorting, and alpha compositing.
 - Analytic gradients for position, scale, rotation, opacity, and spherical harmonics.
-- L1 + SSIM loss, Adam, Gaussian cloning/splitting/pruning, and opacity reset.
+- L1 + SSIM loss, Adam, adaptive density control, and opacity reset.
 - SH degrees 0 through 3, increased every 1,000 training iterations.
 - Gaussian PLY export and offline rendering with PNG comparisons and PSNR reports.
 
@@ -400,7 +410,7 @@ cmake --build build --target example --parallel 4
 
 ## Implementation differences
 
-This is not a bit-for-bit reproduction of the official implementation. Differences include axis-angle parameterization, random camera sampling, Adam-before-density-control ordering, and gradients at the alpha cap. Training uses an unclamped final rendered image; the render demo clamps the final image to `[0, 1]` for image output and PSNR.
+This is not a bit-for-bit reproduction of the official implementation. Differences include axis-angle parameterization, adaptive density control, shuffled camera selection, Adam-before-density-control ordering, and gradients at the alpha cap. Training uses an unclamped final rendered image; the render demo clamps the final image to `[0, 1]` for image output and PSNR.
 
 Compare runs using the same scene, actual image resolution, split, iteration count, and evaluation method. GPU timing should be performed without concurrent rendering or other GPU workloads.
 
@@ -442,27 +452,27 @@ Benchmarks use OpenCV `TickMeter`, warm up before measurement, synchronize CUDA 
 
 ## Recorded results
 
-Test platform: NVIDIA GeForce RTX 4090, Intel Xeon Platinum 8352V, Ubuntu 22.04.4 LTS, CUDA 12.4.
+Test platform: NVIDIA GeForce RTX 4090 (24 GB), Ubuntu 22.04, CUDA 12.4, NVIDIA driver 580.142.
 
 The following are measured results from this project. All runs used 30,000 updates, black background, `downscale=1`, and SH degree 3 at the end of optimization.
 
 | Scene | Resolution | Final Gaussians | Optimization time | Mean ms/update | Test PSNR (dB) | Test SSIM |
 |---|---|---|---|---|---|---|
-| truck | 979 x 546 | 2,017,089 | 356.907 s (5.95 min) | 11.8969 | 25.4658 | 0.885331 |
-| train | 980 x 545 | 1,057,078 | 312.585 s (5.21 min) | 10.4195 | 22.0307 | 0.821593 |
-| drjohnson | 1332 x 876 | 3,139,738 | 539.596 s (8.99 min) | 17.9865 | 29.3618 | 0.905442 |
-| playroom | 1264 x 832 | 1,832,144 | 374.733 s (6.25 min) | 12.4911 | 30.2406 | 0.909664 |
-| bicycle | 4946 x 3286 | 2,532,913 | 2593.510 s (43.23 min) | 86.4503 | 23.7879 | 0.694428 |
-| bonsai | 3118 x 2078 | 933,231 | 720.258 s (12.00 min) | 24.0086 | 31.9468 | 0.936006 |
-| counter | 3115 x 2076 | 925,169 | 943.650 s (15.73 min) | 31.4550 | 28.9318 | 0.911815 |
-| garden | 5187 x 3361 | 3,922,080 | 2486.610 s (41.44 min) | 82.8871 | 26.0180 | 0.779618 |
-| kitchen | 3115 x 2078 | 1,361,337 | 1035.550 s (17.26 min) | 34.5184 | 31.1441 | 0.920823 |
-| room | 3114 x 2075 | 1,096,531 | 1005.790 s (16.76 min) | 33.5264 | 31.2178 | 0.913926 |
-| stump | 4978 x 3300 | 2,078,762 | 1303.370 s (21.72 min) | 43.4457 | 25.5644 | 0.781777 |
+| truck | 979 x 546 | 1,580,419 | 252.127 s (4.20 min) | 8.4042 | 25.5874 | 0.887587 |
+| train | 980 x 545 | 902,374 | 205.840 s (3.43 min) | 6.8613 | 21.9866 | 0.820169 |
+| drjohnson | 1332 x 876 | 2,513,212 | 376.533 s (6.28 min) | 12.5511 | 29.1558 | 0.902705 |
+| playroom | 1264 x 832 | 1,491,373 | 269.792 s (4.50 min) | 8.9931 | 30.1301 | 0.909798 |
+| bicycle | 4946 x 3286 | 3,298,225 | 2008.770 s (33.48 min) | 66.9590 | 24.2821 | 0.716694 |
+| bonsai | 3118 x 2078 | 832,043 | 574.646 s (9.58 min) | 19.1549 | 31.6687 | 0.935875 |
+| counter | 3115 x 2076 | 780,887 | 728.755 s (12.15 min) | 24.2918 | 28.9600 | 0.912322 |
+| garden | 5187 x 3361 | 4,439,664 | 2238.230 s (37.30 min) | 74.6077 | 26.4129 | 0.794868 |
+| kitchen | 3115 x 2078 | 1,072,247 | 782.867 s (13.05 min) | 26.0956 | 31.4130 | 0.921788 |
+| room | 3114 x 2075 | 944,585 | 748.896 s (12.48 min) | 24.9632 | 31.2482 | 0.914543 |
+| stump | 4978 x 3300 | 2,323,116 | 1252.870 s (20.88 min) | 41.7623 | 26.1753 | 0.795514 |
 
-Timing includes the optimization loop, density control, and its existing logs; it excludes scene loading, initialization, model saving, and evaluation. These are historical runs, not new measurements of the current revision; the first four scenes were run at revision `f235c153ada55323bca56a5420311ff240893924`, and bonsai, counter, garden, kitchen, room, and stump at revision `65aaa2a732d32f1e38e2ad130455a301590ac95a`.
+Timing includes the optimization loop, density control, and its existing logs; it excludes scene loading, initialization, model saving, and evaluation. These are recorded 30,000-update runs using the implementation before the later directory and fixed-seed changes.
 
-Metrics are averaged over the held-out views using the filename-based split described above. Saved PLY models were evaluated with the official 3DGS rendering pipeline using floating-point RGB clamped to `[0, 1]`, RGB mean squared error for PSNR, and `utils.loss_utils.ssim` for SSIM. These metrics differ from the render demo's quantized PNG PSNR.
+Metrics are averaged over the held-out views using the filename-based split described above. Evaluation uses floating-point RGB clamped to `[0, 1]`, RGB mean squared error for PSNR, and an 11 x 11 Gaussian SSIM kernel (sigma 1.5). These metrics differ from the render demo's quantized PNG PSNR.
 
 To generate side-by-side images from a saved model, use the render command above. It writes rendering/reference pairs under `comparison/`.
 
@@ -473,6 +483,7 @@ Original code in this project is licensed under the [MIT License](LICENSE), whic
 ## Acknowledgments
 
 - [3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting)
+- [AbsGS](https://arxiv.org/abs/2404.10484)
 - Eigen, OpenCV, and spdlog
 
 Third-party components retain their respective copyright notices and license terms. See the license files distributed with each dependency.
