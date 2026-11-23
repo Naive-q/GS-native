@@ -301,19 +301,20 @@ Both demos support `--help`.
 
 ## Library
 
-Include `gaussian_splatting.h` and link the CMake target `gs-native`.
+Include `core/gaussian_splatting.h` and link the CMake target `gs-native`.
 
 The top-level `gs_native::GaussianSplatting` class provides `Initialize`, `Train`, `Render`, and `Save`. It owns the scene and Gaussian data and coordinates rendering, gradients, Adam, and density control.
 
 ```text
 src/
-  gaussian_splatting.h/.cpp
-  render/       GPU projection, tile lists, and rendering
-  solver/       Image/Gaussian gradients and Adam state
-  density/      Density statistics, cloning, splitting, pruning, and opacity reset
-  knn/          CUDA three-nearest-neighbor search for initial Gaussian scales
+  core/
+    gaussian_splatting.h/.cpp
+    render/     GPU projection, tile lists, and rendering
+    solver/     Image/Gaussian gradients and Adam state
+    density/    Density statistics, cloning, splitting, pruning, and opacity reset
+    knn/        CUDA three-nearest-neighbor search for initial Gaussian scales
+    types/      Shared data types
   io/           COLMAP and Gaussian PLY input/output
-  types/        Shared data types
   util/         CUDA helpers and logging
 ```
 
@@ -352,7 +353,7 @@ endif()
 `main.cpp` loads a COLMAP scene, runs 1,000 single-view updates, renders one view, and saves a PLY model:
 
 ```cpp
-#include "gaussian_splatting.h"
+#include "core/gaussian_splatting.h"
 
 #include "io/data_io.h"
 

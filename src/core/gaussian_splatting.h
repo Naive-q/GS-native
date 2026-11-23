@@ -1,9 +1,9 @@
 #pragma once
 
-#include "density/density_controller.h"
-#include "render/renderer.h"
-#include "solver/solver.h"
-#include "types/scene.h"
+#include "core/density/density_controller.h"
+#include "core/render/renderer.h"
+#include "core/solver/solver.h"
+#include "core/types/scene.h"
 
 #include <cstddef>
 #include <string>

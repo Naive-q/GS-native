@@ -1,6 +1,6 @@
-#include "gaussian_splatting.h"
+#include "core/gaussian_splatting.h"
 
-#include "knn/knn.h"
+#include "core/knn/knn.h"
 #include "io/data_io.h"
 #include "util/log.h"
 
@@ -133,7 +133,7 @@ bool GaussianSplatting::Train(int iterations) {
     }
     GS_NATIVE_INFO("Training started: requested iterations {}, completed {}, gaussians {}.",
         iterations, completed_, gaussians_.gaussian_count_);
-    std::mt19937 generator(std::random_device{}());
+    std::mt19937 generator(0);
     for (int iteration = 0; iteration < iterations; ++iteration) {
         if (gaussians_.gaussian_count_ == 0) {
             return false;
