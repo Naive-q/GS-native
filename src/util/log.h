@@ -1,7 +1,18 @@
 #pragma once
 
+#if defined(__CUDACC__)
+#pragma nv_diagnostic push
+#pragma nv_diag_suppress 27
+#pragma nv_diag_suppress 128
+#pragma nv_diag_suppress 2417
+#endif
+
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/spdlog.h>
+
+#if defined(__CUDACC__)
+#pragma nv_diagnostic pop
+#endif
 
 #include <cstring>
 #include <ctime>
