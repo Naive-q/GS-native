@@ -104,7 +104,7 @@ Both final PLY models are evaluated at the full dimensions listed above. Clamp f
 - **Bicycle:** PSNR improves by 0.490 dB and SSIM by 0.018933. The matched-view image shows more distinct foliage and grass structure, although foreground grass remains blurred relative to the reference.
 - **Garden:** PSNR improves by 0.637 dB and SSIM by 0.011936. The matched view shows clearer shrubs and ground texture.
 - **Stump:** PSNR improves by 0.513 dB and SSIM by 0.011923. Vegetation around the trunk is more distinct in the matched preview.
-- **Train:** PSNR is 0.505 dB lower and SSIM is 0.003910 lower.
+- gs-native has higher PSNR on 7 of 11 scenes. PSNR is lower on train, drjohnson, playroom, and bonsai; all signed differences are reported in the table.
 - Final Gaussian counts and intermediate trajectories differ.
 
 ## Matched-view previews
