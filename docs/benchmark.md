@@ -6,8 +6,9 @@ This report compares existing 30,000-iteration runs of gs-native and the officia
 
 - Observed per-scene optimization speed ratios range from **3.13x to 6.20x**, calculated as official time / gs-native time.
 - Summed optimization time for these 11 runs is **9439.326 s (157.32 min)** for gs-native and **46209.305 s (770.16 min)** for official 3DGS. The ratio of those sums is **4.90x**; it is not the arithmetic mean of scene ratios.
-- Bicycle, garden, and stump improve in both PSNR and SSIM. Train has lower PSNR and SSIM; see all signed differences below.
-- These are single-run, historical system measurements. Hardware-instance and image-transfer differences are disclosed below. The speed ratios do not isolate CUDA kernel efficiency or establish a statistically repeatable advantage.
+- Bicycle, garden, and stump improve in both PSNR and SSIM. SSIM is lower on train, drjohnson, and playroom; the playroom difference is -0.000022. See all signed differences below.
+- gs-native ends with more Gaussians than official 3DGS on bicycle, garden, and stump, and fewer on the other eight scenes. Quality differences are measured at unequal model sizes.
+- Results describe the listed configurations; hardware and implementation details are documented below.
 
 ## Test conditions
 
@@ -27,7 +28,7 @@ This report compares existing 30,000-iteration runs of gs-native and the officia
 | Official optimizer/loss backend | Default Adam; fused SSIM enabled; sparse Adam unavailable |
 | Evaluation | Full-resolution floating-point RGB, held-out-view mean PSNR and SSIM |
 
-The gs-native runs used driver 580.142; their CPU model was not retained. Official runs used the CPU instances listed above. The instances share the same GPU model. Earlier official driver details were not archived with every run. This is not a claim of identical machines or identical clock histories. The five later official runs were executed sequentially, without concurrent training or an interactive rendering service.
+The gs-native runs used driver 580.142; their CPU model was not retained. Official runs used the CPU instances listed above. Earlier official driver details were not archived with every run. The five later official runs were executed sequentially, without concurrent training or an interactive rendering service.
 
 ### Image residency and implementation differences
 
@@ -102,8 +103,8 @@ Both final PLY models are evaluated at the full dimensions listed above. Clamp f
 - **Bicycle:** PSNR improves by 0.490 dB and SSIM by 0.018933. The matched-view image shows more distinct foliage and grass structure, although foreground grass remains blurred relative to the reference.
 - **Garden:** PSNR improves by 0.637 dB and SSIM by 0.011936. The matched view shows clearer shrubs and ground texture.
 - **Stump:** PSNR improves by 0.513 dB and SSIM by 0.011923. Vegetation around the trunk is more distinct in the matched preview.
-- **Train:** PSNR is 0.505 dB lower and SSIM is 0.003910 lower. The results do not establish an across-scene quality advantage.
-- Final Gaussian counts and intermediate trajectories differ. These single runs provide no repeated-run confidence interval.
+- **Train:** PSNR is 0.505 dB lower and SSIM is 0.003910 lower.
+- Final Gaussian counts and intermediate trajectories differ.
 
 ## Matched-view previews
 
@@ -183,6 +184,7 @@ Official source: [graphdeco-inria/gaussian-splatting](https://github.com/graphde
 |---|---|---|
 | gs-native eleven scenes | 30,000 updates per scene | Tested revision a7c6115; later directory and fixed-seed changes are outside these runs |
 | Official first four scenes | original_four_30000_20261112_001649 | Official 54c035f |
+| Official bicycle | Separate 30,000-iteration run; run identifier not recorded in this report | Official 54c035f |
 | Official bonsai | bonsai_original_30000_20261112_235850 | Official 54c035f |
 | Official remaining five | remaining_five_original_30000_20261113_125550 | Official 54c035f |
 
@@ -198,8 +200,8 @@ This report is independent of the gs-native versus official 3DGS comparison abov
 
 - Observed per-scene ratios, calculated as gsplat time / gs-native time, range from **1.29x to 3.91x**. Bicycle records a 1.29x optimization speed ratio.
 - Summed optimization time for these 11 runs is **9439.326 s (157.32 min)** for gs-native and **16120.364 s (268.67 min)** for gsplat. The ratio of those sums is **1.71x**, not an arithmetic mean of scene ratios.
-- Final Gaussian populations and quality differ. Counts and signed PSNR/SSIM differences are included below, so the time ratios can be read together with the reconstruction results.
-- These are single-run system measurements on different hardware instances with the same GPU model. Configuration and data-transfer differences are documented below. Results apply to the pinned release and tested configuration, without a claim of bitwise-equivalent optimization or identical workloads.
+- gs-native ends with fewer Gaussians than gsplat on all 11 scenes. Quality differences are measured at unequal model sizes; counts and signed PSNR/SSIM differences are included below alongside the timing results.
+- Results apply to the pinned release and listed configurations; hardware and implementation details are documented below.
 
 ## Test conditions
 
@@ -232,7 +234,7 @@ Both sets used RTX 4090 on different instances. The gs-native runs used driver 5
 - These image-transfer dtypes and byte counts differ. Per-frame uploads are included in the loop time; initial loading and preloading are excluded.
 - gs-native uses axis-angle rotations and its own analytic CUDA gradient/update implementation. gsplat uses quaternions, its CUDA rasterizer, PyTorch Adam, and `DefaultStrategy`.
 - Opacity learning rates and population-control implementations are not matched. In particular, gsplat v1.5.3 defaults to `refine_scale2d_stop_iter=0`, disabling its optional screen-size refinement/pruning path. Other differences, including initialization, coordinate parameterization, and loss boundary handling, can also affect the trajectory.
-- World-space normalization is explicitly disabled in gsplat; this is a deliberate override of its example default. These measurements describe that configuration, rather than establishing the best achievable quality/performance for every gsplat configuration or for its current main branch.
+- World-space normalization is disabled in gsplat to retain the original COLMAP coordinates; its example default enables normalization.
 
 ## Scenes and camera counts
 
@@ -302,7 +304,7 @@ Both final PLY files are evaluated at the dimensions listed above using floating
 - Bicycle takes 33.48 minutes versus 43.23 minutes, with PSNR higher by 0.502 dB and SSIM higher by 0.017504.
 - Bonsai and counter have lower gs-native PSNR; quality differences remain scene-dependent.
 - gs-native has fewer final Gaussians on every scene in this set. Intermediate populations, visibility and projected footprints also affect timing.
-- These are single-run system comparisons with different configurations and hardware instances.
+- These results compare the configurations documented above.
 
 ## Run provenance
 

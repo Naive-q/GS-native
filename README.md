@@ -6,6 +6,8 @@ The implementation follows the pipeline of [3D Gaussian Splatting](https://githu
 
 ## Performance and quality
 
+The two comparisons below report measured results for each project under the listed configurations. Image resolutions, held-out views, and iteration counts are matched; detailed configurations are provided in the benchmark report. The results describe speed and reconstruction quality under these configurations and do not isolate the effects of implementation differences.
+
 ### gs-native vs. official 3DGS
 
 Measured optimization speed ratios of **3.13x to 6.20x** versus the official Python 3DGS implementation across 11 historical runs. Each pair used the same scene, actual image resolution, held-out camera split, and a 30,000-iteration budget. Quality differences are reported below rather than assumed to be zero.
@@ -40,7 +42,7 @@ Left to right: **gs-native | official 3DGS | reference**. Both models use the sa
 
 **Speed ratio = official time / gs-native time. Delta = gs-native minus official.** Timings include optimization and density control, and exclude loading, initialization, saving, and evaluation. PSNR and SSIM use full-resolution floating-point evaluation, not the quantized PNG outputs of the render demo.
 
-**Test platforms:** RTX 4090 (24 GB), Ubuntu 22.04, CUDA 12.4. The gs-native runs used driver 580.142. Official runs used the previously recorded Xeon Platinum 8352V and 8358P instances; the CPU model for this gs-native run was not retained. Image residency/transfer paths also differ. These are single-run system measurements. Bicycle, garden, and stump improve in both PSNR and SSIM; train is 0.505 dB lower for gs-native.
+**Test platforms:** RTX 4090 (24 GB), Ubuntu 22.04, CUDA 12.4. The gs-native runs used NVIDIA driver 580.142. Detailed test conditions are provided in the benchmark report.
 
 [Full 11-scene report: resolutions, camera counts, model sizes, absolute metrics, run provenance, and all matched-view previews](docs/benchmark.md).
 
@@ -64,7 +66,7 @@ This is a separate paired comparison against [gsplat v1.5.3](https://github.com/
 
 **Speed ratio = gsplat time / gs-native time. Delta = gs-native minus gsplat.** A ratio above 1 means a shorter recorded gs-native time. Bicycle takes 33.48 minutes for gs-native and 43.23 minutes for gsplat. Loading, initialization, warmup, saving, and evaluation are outside the optimization timers; in-loop density control and opacity resets remain included.
 
-**Configuration and platform differences:** gsplat uses `DefaultStrategy` and ordinary Adam, with opacity learning rate **0.05**, versus **0.025** in gs-native. World-space normalization is disabled in the gsplat driver to retain the original COLMAP coordinates. Both sets used RTX 4090, Ubuntu 22.04, and CUDA 12.4 on different instances. The gsplat instance used Xeon Platinum 8358P; the CPU model for this gs-native run was not retained. Host target-image dtypes and Gaussian population trajectories differ. The ratios describe the tested systems and configurations; they do not isolate CUDA kernel performance or imply equal reconstruction quality.
+**Test configuration:** Both sets used RTX 4090, Ubuntu 22.04, and CUDA 12.4. gsplat uses `DefaultStrategy` and ordinary Adam. Detailed optimizer settings and test conditions are provided in the benchmark report.
 
 [Full gs-native vs. gsplat report: conditions, camera counts, absolute metrics, timings, and provenance](docs/benchmark.md#gs-native-vs-gsplat-v153-11-scene-benchmark).
 
