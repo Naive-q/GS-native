@@ -9,6 +9,7 @@ This report compares existing 30,000-iteration runs of gs-native and the officia
 - Bicycle, garden, and stump improve in both PSNR and SSIM. SSIM is lower on train, drjohnson, and playroom; the playroom difference is -0.000022. See all signed differences below.
 - gs-native ends with more Gaussians than official 3DGS on bicycle, garden, and stump, and fewer on the other eight scenes. Quality differences are measured at unequal model sizes.
 - Results describe the listed configurations; hardware and implementation details are documented below.
+- Each scene was measured once; run-to-run variability was not evaluated.
 
 ## Test conditions
 
@@ -202,6 +203,7 @@ This report is independent of the gs-native versus official 3DGS comparison abov
 - Summed optimization time for these 11 runs is **9439.326 s (157.32 min)** for gs-native and **16120.364 s (268.67 min)** for gsplat. The ratio of those sums is **1.71x**, not an arithmetic mean of scene ratios.
 - gs-native ends with fewer Gaussians than gsplat on all 11 scenes. Quality differences are measured at unequal model sizes; counts and signed PSNR/SSIM differences are included below alongside the timing results.
 - Results apply to the pinned release and listed configurations; hardware and implementation details are documented below.
+- Each scene was measured once; run-to-run variability was not evaluated.
 
 ## Test conditions
 
