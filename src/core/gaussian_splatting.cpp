@@ -145,23 +145,7 @@ bool GaussianSplatting::Train(int iterations) {
         int index = camera_order_[camera_cursor_];
         const Camera& source = scene_.train_cameras_[index];
         const cv::Mat& target = scene_.train_images_[index];
-        CameraParams camera = {};
-        camera.width_ = source.image_size_.width;
-        camera.height_ = source.image_size_.height;
-        camera.fx_ = source.K_.at<float>(0, 0);
-        camera.fy_ = source.K_.at<float>(1, 1);
-        camera.cx_ = source.K_.at<float>(0, 2);
-        camera.cy_ = source.K_.at<float>(1, 2);
-        for (int row = 0; row < 3; ++row) {
-            camera.t_c_w_[row] = source.t_c_w_.at<float>(row);
-            for (int col = 0; col < 3; ++col) {
-                camera.R_c_w_[row * 3 + col] = source.R_c_w_.at<float>(row, col);
-            }
-        }
-        camera.near_depth_ = 0.2f;
-        camera.far_depth_ = std::numeric_limits<float>::max();
-        camera.tile_count_x_ = (camera.width_ + 15) / 16;
-        camera.tile_count_y_ = (camera.height_ + 15) / 16;
+        CameraParams camera = source.GetCameraParams();
         int next = completed_ + 1;
         sh_degree_ = std::min(3, next / 1000);
         float fraction = std::min(1.0f, static_cast<float>(next) / 30000.0f);
@@ -227,23 +211,7 @@ bool GaussianSplatting::Render(
         source.t_c_w_.type() != CV_32FC1 || source.t_c_w_.rows != 3 || source.t_c_w_.cols != 1) {
         return false;
     }
-    CameraParams camera = {};
-    camera.width_ = source.image_size_.width;
-    camera.height_ = source.image_size_.height;
-    camera.fx_ = source.K_.at<float>(0, 0);
-    camera.fy_ = source.K_.at<float>(1, 1);
-    camera.cx_ = source.K_.at<float>(0, 2);
-    camera.cy_ = source.K_.at<float>(1, 2);
-    for (int row = 0; row < 3; ++row) {
-        camera.t_c_w_[row] = source.t_c_w_.at<float>(row);
-        for (int col = 0; col < 3; ++col) {
-            camera.R_c_w_[row * 3 + col] = source.R_c_w_.at<float>(row, col);
-        }
-    }
-    camera.near_depth_ = 0.2f;
-    camera.far_depth_ = std::numeric_limits<float>::max();
-    camera.tile_count_x_ = (camera.width_ + 15) / 16;
-    camera.tile_count_y_ = (camera.height_ + 15) / 16;
+    CameraParams camera = source.GetCameraParams();
     size_t pixels = static_cast<size_t>(camera.width_) * camera.height_;
     if (pixels > pixel_capacity_) {
         float* replacement_image = nullptr;
